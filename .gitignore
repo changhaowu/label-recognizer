@@ -2,3 +2,16 @@ wandb
 Pipfile.lock
 *.safetensors
 .DS_Store
+
+归档.7z.001
+归档.7z.002
+归档.7z.003
+归档.7z.004
+归档.7z.005
+归档.7z.006
+
+labelocr
+processed_data_test
+processed_data_train
+processed_data_validation
+checkpoints
