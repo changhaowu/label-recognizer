@@ -189,6 +189,39 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
+# def initialize_rotary_pos_emb(tensor_shape, device):
+#     """Initializes rotary position embedding tensors cos and sin."""
+#     seq_len, head_dim = tensor_shape
+#     position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)
+#     div_term = torch.exp(
+#         torch.arange(0, head_dim, 2, dtype=torch.float, device=device)
+#         * -(torch.log(torch.tensor(10000.0)) / head_dim)
+#     )
+#     cos = torch.zeros((seq_len, head_dim), device=device)
+#     sin = torch.zeros((seq_len, head_dim), device=device)
+#     cos[:, 0::2] = torch.cos(position * div_term)
+#     sin[:, 0::2] = torch.sin(position * div_term)
+#     cos[:, 1::2] = cos[:, 0::2]
+#     sin[:, 1::2] = sin[:, 0::2]
+#     return cos, sin
+
+
+def initialize_rotary_pos_emb(seq_len, head_dim, device):
+    """Initializes rotary position embedding tensors cos and sin."""
+    position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)
+    div_term = torch.exp(
+        torch.arange(0, head_dim, 2, dtype=torch.float, device=device)
+        * -(torch.log(torch.tensor(10000.0)) / head_dim)
+    )
+    cos = torch.zeros((seq_len, head_dim), device=device)
+    sin = torch.zeros((seq_len, head_dim), device=device)
+    cos[:, 0::2] = torch.cos(position * div_term)
+    sin[:, 0::2] = torch.sin(position * div_term)
+    cos[:, 1::2] = cos[:, 0::2]
+    sin[:, 1::2] = sin[:, 0::2]
+    return cos, sin
+
+
 # Copied from transformers.models.llama.modeling_llama.apply_rotary_pos_emb
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
@@ -211,6 +244,31 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+
+    # # Debugging prints
+    # print(f"query shape: {q.shape}")
+    # print(f"key shape: {k.shape}")
+    # print(f"cos shape: {cos.shape}")
+    # print(f"sin shape: {sin.shape}")
+    # print(f"position_ids shape: {position_ids.shape}")
+    # print(f"position_ids: {position_ids}")
+
+    # # Check if cos and sin are not empty and have the correct dimensions
+    # if cos.size(0) == 0 or sin.size(0) == 0:
+    #     cos, sin = initialize_rotary_pos_emb(q.size(-2), q.size(-1), q.device)
+    #     # raise ValueError("The cos and sin tensors must not be empty.")
+    #     print(f"Initialized cos shape: {cos.shape}")
+    #     print(f"Initialized sin shape: {sin.shape}")
+
+    # if cos.size(1) != q.size(-1) or sin.size(1) != q.size(-1):
+    #     raise ValueError(
+    #         "The cos and sin tensors must match the last dimension of q and k."
+    #     )
+
+    # # Ensure position_ids are within bounds
+    # max_pos_id = cos.size(0) - 1
+    # position_ids = position_ids.clamp(0, max_pos_id)
+
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)

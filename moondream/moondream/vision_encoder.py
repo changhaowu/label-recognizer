@@ -1,6 +1,9 @@
-from typing import Union
+# from typing import Union
+# import PIL.Image
 
-import PIL.Image
+from typing import Union, List
+from PIL import Image
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -247,8 +250,11 @@ class VisionEncoder(nn.Module):
             ]
         )(image)
 
+    # def forward(
+    #     self, images: Union[PIL.Image.Image, list[PIL.Image.Image], torch.Tensor]
+    # ) -> torch.Tensor:
     def forward(
-        self, images: Union[PIL.Image.Image, list[PIL.Image.Image], torch.Tensor]
+        self, images: Union[Image.Image, List[Image.Image], torch.Tensor]
     ) -> torch.Tensor:
         im_list = None
         if isinstance(images, torch.Tensor):

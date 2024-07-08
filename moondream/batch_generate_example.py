@@ -23,6 +23,7 @@ prompts = [
 ]
 
 answers = moondream.batch_answer(
+    # images=[image1, image1, image2, image2],
     images=[image1, image1, image2, image2],
     prompts=prompts,
     tokenizer=tokenizer,
