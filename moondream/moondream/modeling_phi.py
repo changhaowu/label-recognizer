@@ -189,39 +189,6 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-# def initialize_rotary_pos_emb(tensor_shape, device):
-#     """Initializes rotary position embedding tensors cos and sin."""
-#     seq_len, head_dim = tensor_shape
-#     position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)
-#     div_term = torch.exp(
-#         torch.arange(0, head_dim, 2, dtype=torch.float, device=device)
-#         * -(torch.log(torch.tensor(10000.0)) / head_dim)
-#     )
-#     cos = torch.zeros((seq_len, head_dim), device=device)
-#     sin = torch.zeros((seq_len, head_dim), device=device)
-#     cos[:, 0::2] = torch.cos(position * div_term)
-#     sin[:, 0::2] = torch.sin(position * div_term)
-#     cos[:, 1::2] = cos[:, 0::2]
-#     sin[:, 1::2] = sin[:, 0::2]
-#     return cos, sin
-
-
-def initialize_rotary_pos_emb(seq_len, head_dim, device):
-    """Initializes rotary position embedding tensors cos and sin."""
-    position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)
-    div_term = torch.exp(
-        torch.arange(0, head_dim, 2, dtype=torch.float, device=device)
-        * -(torch.log(torch.tensor(10000.0)) / head_dim)
-    )
-    cos = torch.zeros((seq_len, head_dim), device=device)
-    sin = torch.zeros((seq_len, head_dim), device=device)
-    cos[:, 0::2] = torch.cos(position * div_term)
-    sin[:, 0::2] = torch.sin(position * div_term)
-    cos[:, 1::2] = cos[:, 0::2]
-    sin[:, 1::2] = sin[:, 0::2]
-    return cos, sin
-
-
 # Copied from transformers.models.llama.modeling_llama.apply_rotary_pos_emb
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
@@ -244,31 +211,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-
-    # # Debugging prints
-    # print(f"query shape: {q.shape}")
-    # print(f"key shape: {k.shape}")
-    # print(f"cos shape: {cos.shape}")
-    # print(f"sin shape: {sin.shape}")
-    # print(f"position_ids shape: {position_ids.shape}")
-    # print(f"position_ids: {position_ids}")
-
-    # # Check if cos and sin are not empty and have the correct dimensions
-    # if cos.size(0) == 0 or sin.size(0) == 0:
-    #     cos, sin = initialize_rotary_pos_emb(q.size(-2), q.size(-1), q.device)
-    #     # raise ValueError("The cos and sin tensors must not be empty.")
-    #     print(f"Initialized cos shape: {cos.shape}")
-    #     print(f"Initialized sin shape: {sin.shape}")
-
-    # if cos.size(1) != q.size(-1) or sin.size(1) != q.size(-1):
-    #     raise ValueError(
-    #         "The cos and sin tensors must match the last dimension of q and k."
-    #     )
-
-    # # Ensure position_ids are within bounds
-    # max_pos_id = cos.size(0) - 1
-    # position_ids = position_ids.clamp(0, max_pos_id)
-
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
@@ -458,9 +400,39 @@ class PhiAttention(nn.Module):
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-        attn_output = torch.nn.functional.scaled_dot_product_attention(
-            query_states, key_states, value_states, attn_mask=attention_mask
+        # Queries and keys upcast to fp32 is required by Phi-2 to avoid overflow
+        attn_weights = torch.matmul(
+            query_states.to(torch.float32), key_states.to(torch.float32).transpose(2, 3)
+        ) / math.sqrt(self.head_dim)
+
+        if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
+            raise ValueError(
+                f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
+                f" {attn_weights.size()}"
+            )
+
+        if attention_mask is not None:
+            if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
+                raise ValueError(
+                    f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
+                )
+            attn_weights = attn_weights + attention_mask
+
+        # upcast attention to fp32
+        attn_weights = nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32
+        ).to(value_states.dtype)
+        attn_weights = nn.functional.dropout(
+            attn_weights, p=self.attention_dropout, training=self.training
         )
+
+        attn_output = torch.matmul(attn_weights, value_states)
+
+        if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+                f" {attn_output.size()}"
+            )
 
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
@@ -1143,6 +1115,7 @@ class PhiForCausalLM(PhiPreTrainedModel):
 
         hidden_states = outputs[0]
         logits = self.lm_head(hidden_states)
+        logits = logits.float()
 
         loss = None
         if labels is not None:
