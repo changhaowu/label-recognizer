@@ -15,3 +15,6 @@ processed_data_test
 processed_data_train
 processed_data_validation
 checkpoints
+
+moondream/pretrained_weights_03_13
+moondream/pretrained_weights_05_20
