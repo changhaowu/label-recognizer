@@ -2,12 +2,14 @@ import math
 import os
 import sys
 from PIL import Image
+import json
 
 import torch
 from einops import rearrange
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from moondream.moondream import Moondream, detect_device, LATEST_REVISION
 
 DEVICE = "cpu"
 CONTINUE = 1
@@ -38,18 +40,54 @@ IMG_TOKENS = 729
 
 
 class PriceTagDataset(Dataset):
-    def __init__(self, split="train"):
+    # def __init__(self, base_dir=None, split="train"):
+    #     super().__init__()
+    #     data = []
+    #     split_dir = os.listdir.join(base_dir, f"./data_{split}/labels")
+    #     for filename in os.listdir(split_dir):
+    #         # for filename in os.listdir(f"./data_{split}/labels"):
+    #         if filename.endswith(".json"):
+    #             # file_path = os.path.join(f"./data_{split}/labels", filename)
+    #             file_path = os.path.join(split_dir, filename)
+    #             filename_without_extension = os.path.splitext(filename)[0]
+    #             image_filename = filename_without_extension + ".png"
+    #             image_path = os.path.join(f"./data_{split}/images", image_filename)
+    #             with open(file_path, "r") as json_file:
+    #                 with Image.open(image_path) as image:
+    #                     json_data = json_file.read()
+    #                     data.append(
+    #                         {
+    #                             "image": image.convert("RGB"),
+    #                             "qa": [
+    #                                 {
+    #                                     "question": 'Find average price for goods in each labels in these images, respond with following json format: ```{"name": <good name, without brand name>, "price": <average price, per L(liter), kg(kilogram) or st(piece)>, "unit": <L, kg or st>}```',
+    #                                     "answer": json_data,
+    #                                 }
+    #                             ],
+    #                         }
+    #                     )
+    #     self.data = data
+
+    def __init__(self, base_dir=None, split="train"):
         super().__init__()
         data = []
-        for filename in os.listdir(f"./data_{split}/labels"):
+
+        if base_dir is None:
+            base_dir = "./"
+
+        labels_dir = os.path.join(base_dir, f"data_{split}", "labels")
+        images_dir = os.path.join(base_dir, f"data_{split}", "images")
+
+        for filename in os.listdir(labels_dir):
             if filename.endswith(".json"):
-                file_path = os.path.join(f"./data_{split}/labels", filename)
+                file_path = os.path.join(labels_dir, filename)
                 filename_without_extension = os.path.splitext(filename)[0]
                 image_filename = filename_without_extension + ".png"
-                image_path = os.path.join(f"./data_{split}/images", image_filename)
+                image_path = os.path.join(images_dir, image_filename)
+
                 with open(file_path, "r") as json_file:
+                    json_data = json.load(json_file)  # Read JSON data
                     with Image.open(image_path) as image:
-                        json_data = json_file.read()
                         data.append(
                             {
                                 "image": image.convert("RGB"),
@@ -71,19 +109,21 @@ class PriceTagDataset(Dataset):
 
 
 datasets = {
-    "train": PriceTagDataset("train"),
-    "val": PriceTagDataset("validation"),
-    "test": PriceTagDataset("test"),
+    "train": PriceTagDataset(split="train"),
+    "val": PriceTagDataset(split="validation"),
+    "test": PriceTagDataset(split="test"),
 }
-
-tokenizer = AutoTokenizer.from_pretrained(
-    "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
-)
 
 weights_path = "./moondream/pretrained_weights_03_13"
 
-moondream = AutoModelForCausalLM.from_pretrained(
-    "./checkpoints/moondream-ft" if CONTINUE else "vikhyatk/moondream2",
+tokenizer = AutoTokenizer.from_pretrained(
+    # "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
+    pretrained_model_name_or_path=weights_path
+)
+
+moondream = Moondream.from_pretrained(
+    # "./checkpoints/moondream-ft" if CONTINUE else "vikhyatk/moondream2",
+    pretrained_model_name_or_path=weights_path if CONTINUE else "vikhyatk/moondream2",
     revision=MD_REVISION,
     trust_remote_code=True,
     attn_implementation="flash_attention_2" if DEVICE == "cuda" else None,
@@ -94,8 +134,33 @@ moondream = AutoModelForCausalLM.from_pretrained(
 
 def collate_fn(batch):
     images = [sample["image"] for sample in batch]
-    images = torch.stack(moondream.vision_encoder.preprocess(images))
-    images = rearrange(images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
+    # images = torch.stack(moondream.vision_encoder.preprocess(images))
+    # images = rearrange(images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
+    preprocessed_large_images, preprocessed_small_images = (
+        moondream.vision_encoder.preprocess_images(images)
+    )
+
+    # Debugging print statements
+    print(
+        f"Preprocessed large images shape: {preprocessed_large_images.shape if len(preprocessed_large_images) > 0 else 'None'}"
+    )
+    print(
+        f"Preprocessed small images shape: {preprocessed_small_images.shape if len(preprocessed_small_images) > 0 else 'None'}"
+    )
+
+    # Combine large and small images if needed
+    if preprocessed_large_images.size(0) > 0 and preprocessed_small_images.size(0) > 0:
+        try:
+            preprocessed_images = torch.cat(
+                (preprocessed_large_images, preprocessed_small_images), dim=0
+            )
+        except RuntimeError as e:
+            print(f"Error concatenating images: {e}")
+            preprocessed_images = None
+    elif preprocessed_large_images.size(0) > 0:
+        preprocessed_images = preprocessed_large_images
+    else:
+        preprocessed_images = preprocessed_small_images
 
     labels_acc = []
     tokens_acc = []
@@ -135,7 +200,7 @@ def collate_fn(batch):
         attn_mask_acc.append([1] * len_i + [0] * pad_i)
 
     return (
-        images.to(dtype=DTYPE),
+        preprocessed_images.to(dtype=DTYPE),
         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
         torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
         torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
