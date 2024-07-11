@@ -65,7 +65,7 @@ class Moondream(PreTrainedModel):
         prompt,
         tokenizer,
         eos_text="<END>",
-        max_new_tokens=128,
+        max_new_tokens=32,
         **kwargs,
     ):
         eos_tokens = tokenizer(eos_text, add_special_tokens=False)[0].ids
@@ -102,7 +102,7 @@ class Moondream(PreTrainedModel):
             eos_text="<END>",
             tokenizer=tokenizer,
             # max_new_tokens=512,
-            max_new_tokens=128,
+            max_new_tokens=32,
             **kwargs,
         )[0]
 
@@ -185,7 +185,7 @@ class Moondream(PreTrainedModel):
             "bos_token_id": tokenizer.bos_token_id,
             "pad_token_id": tokenizer.eos_token_id,
             # "max_new_tokens": 512,
-            "max_new_tokens": 128,
+            "max_new_tokens": 64,
             **kwargs,
         }
 

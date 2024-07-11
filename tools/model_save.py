@@ -7,7 +7,7 @@ revision = "2024-03-13"
 local_model_path = (
     # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights"
     # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights_03_13"
-    "/home/karl/Documents/Github/label-recognizer/checkpoint"
+    "/home/wch/Documents/Github/label-recognizer/checkpoints/moondream2"
 )
 
 DTYPE = torch.float32

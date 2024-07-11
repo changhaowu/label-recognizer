@@ -15,12 +15,13 @@ from moondream.moondream import Moondream, detect_device, LATEST_REVISION
 DEVICE = "cuda"
 CONTINUE = 1
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
+# DTYPE = torch.float32
 MD_REVISION = "2024-04-02"
-EPOCHS = 25
+EPOCHS = 500
 # Number of samples to process in each batch. Set this to the highest value that doesn't cause an
 # out-of-memory error. Decrease it if you're running out of memory. Batch size 8 currently uses around
 # 15 GB of GPU memory during fine-tuning.
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 # Number of batches to process before updating the model. You can use this to simulate a higher batch
 # size than your GPU can handle. Set this to 1 to disable gradient accumulation.
 GRAD_ACCUM_STEPS = 1
@@ -32,7 +33,7 @@ GRAD_ACCUM_STEPS = 1
 # Note that we linearly warm the learning rate up from 0.1 * LR to LR over the first 10% of the
 # training run, and then decay it back to 0.1 * LR over the last 90% of the training run using a
 # cosine schedule.
-LR = 5e-6
+LR = 3e-6
 # LR = 3e-5
 # Whether to use Weights and Biases for logging training metrics.
 # USE_WANDB = True
@@ -69,12 +70,15 @@ class PriceTagDataset(Dataset):
                                 "image": image.convert("RGB"),
                                 "qa": [
                                     {
-                                        "question": """Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
-                                        1. Identify the product name, typically a recognizable item name.
+                                        "question": 
+                                        """
+                                        Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
+
+                                        1. Identify the product name, typically a recognizable item name found in the image.
                                         2. Detect the price, represented as the most prominent number followed by a unit or in close proximity to a unit.
                                         3. Determine the unit of measurement, which could be "kg", "L", or "st".
 
-                                        Respond exclusively in the JSON format below, with no additional text or explanations. Conclude your response with "<|endoftext|>". Example format:
+                                        Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". The output should only be one combination of the most likely product name, price, and unit. Example format:
 
                                         ```json
                                         {
@@ -82,7 +86,7 @@ class PriceTagDataset(Dataset):
                                             "price": "133",
                                             "unit": "kg"
                                         }
-                                        <|endoftext|>.
+                                        <|endoftext|>
                                         """,
                                         "answer": json_data,
                                     }
@@ -107,19 +111,20 @@ datasets = {
 # weights_path = "./moondream/pretrained_weights_03_13"
 # tokenizer_path = "./moondream/pretrained_weights_03_13"
 
-# weights_path = "./checkpoints/moondream-ft"
-# tokenizer_path = "./checkpoints/moondream-ft"
-
 # weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 
-weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_75"
-tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_75"
+# weights_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
+# tokenizer_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
+
+weights_path = "checkpoints/lfs_raw"
+tokenizer_path = "checkpoints/lfs_raw"
 
 
 tokenizer = AutoTokenizer.from_pretrained(
     # "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
-    pretrained_model_name_or_path=tokenizer_path
+    pretrained_model_name_or_path=tokenizer_path,
+    trust_remote_code=True
 )
 
 moondream = Moondream.from_pretrained(
@@ -333,7 +338,7 @@ def test():
             2. Detect the price, represented as the most prominent number followed by a unit or in close proximity to a unit.
             3. Determine the unit of measurement, which could be "kg", "L", or "st".
 
-            Respond exclusively in the JSON format below, with no additional text or explanations. Conclude your response with "<|endoftext|>". The output should only be one combination of the most likely product name, price, and unit. Example format:
+            Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". The output should only be one combination of the most likely product name, price, and unit. Example format:
 
             ```json
             {
