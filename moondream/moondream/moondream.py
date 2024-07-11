@@ -3,9 +3,11 @@ from .vision_encoder import VisionEncoder
 from .configuration_moondream import MoondreamConfig
 from transformers import PreTrainedModel
 import re
+import json
 
 from .modeling_phi import PhiForCausalLM
 from .configuration_moondream import PhiConfig
+
 
 class Moondream(PreTrainedModel):
     config_class = MoondreamConfig
@@ -99,16 +101,36 @@ class Moondream(PreTrainedModel):
             prompt,
             eos_text="<END>",
             tokenizer=tokenizer,
-            max_new_tokens=512,
+            # max_new_tokens=512,
+            max_new_tokens=128,
             **kwargs,
         )[0]
-        cleaned_answer = re.sub("<$|<END$", "", answer).strip()
+
+        # 修改正则表达式，确保正确去除结束标记
+        cleaned_answer = re.sub(r"<END>$", "", answer).strip()
 
         # Use the result_queue to pass the result if it is provided
         if result_queue:
             result_queue.put(cleaned_answer)
         else:
             return cleaned_answer
+
+    # def answer_question(
+    #     self,
+    #     image_embeds,
+    #     question,
+    #     tokenizer,
+    #     chat_history="",
+    #     result_queue=None,
+    #     **kwargs,
+    # ):
+    #     # 简化的示例响应
+    #     example_response = [
+    #         {"name": "Torskifle", "price": 0.49, "unit": "kg"},
+    #         {"name": "Notafar", "price": 0.4, "unit": "kg"},
+    #     ]
+    #     response_json = json.dumps(example_response)
+    #     return response_json
 
     def batch_answer(
         self,
@@ -162,7 +184,8 @@ class Moondream(PreTrainedModel):
             "eos_token_id": eos_tokens,
             "bos_token_id": tokenizer.bos_token_id,
             "pad_token_id": tokenizer.eos_token_id,
-            "max_new_tokens": 512,
+            # "max_new_tokens": 512,
+            "max_new_tokens": 128,
             **kwargs,
         }
 

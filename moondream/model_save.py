@@ -6,7 +6,8 @@ model_id = "vikhyatk/moondream2"
 revision = "2024-03-13"
 local_model_path = (
     # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights"
-    "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights_03_13"
+    # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights_03_13"
+    "/home/karl/Documents/Github/label-recognizer/checkpoint"
 )
 
 DTYPE = torch.float32

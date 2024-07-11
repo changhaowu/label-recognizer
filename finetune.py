@@ -3,6 +3,7 @@ import os
 import sys
 from PIL import Image
 import json
+import io
 
 import torch
 from einops import rearrange
@@ -11,15 +12,15 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from moondream.moondream import Moondream, detect_device, LATEST_REVISION
 
-DEVICE = "cpu"
+DEVICE = "cuda"
 CONTINUE = 1
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
 MD_REVISION = "2024-04-02"
-EPOCHS = 2
+EPOCHS = 25
 # Number of samples to process in each batch. Set this to the highest value that doesn't cause an
 # out-of-memory error. Decrease it if you're running out of memory. Batch size 8 currently uses around
 # 15 GB of GPU memory during fine-tuning.
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 # Number of batches to process before updating the model. You can use this to simulate a higher batch
 # size than your GPU can handle. Set this to 1 to disable gradient accumulation.
 GRAD_ACCUM_STEPS = 1
@@ -31,8 +32,10 @@ GRAD_ACCUM_STEPS = 1
 # Note that we linearly warm the learning rate up from 0.1 * LR to LR over the first 10% of the
 # training run, and then decay it back to 0.1 * LR over the last 90% of the training run using a
 # cosine schedule.
-LR = 3e-5
+LR = 5e-6
+# LR = 3e-5
 # Whether to use Weights and Biases for logging training metrics.
+# USE_WANDB = True
 USE_WANDB = False
 ANSWER_EOS = "<|endoftext|>"
 # Number of tokens used to represent each image.
@@ -40,33 +43,6 @@ IMG_TOKENS = 729
 
 
 class PriceTagDataset(Dataset):
-    # def __init__(self, base_dir=None, split="train"):
-    #     super().__init__()
-    #     data = []
-    #     split_dir = os.listdir.join(base_dir, f"./data_{split}/labels")
-    #     for filename in os.listdir(split_dir):
-    #         # for filename in os.listdir(f"./data_{split}/labels"):
-    #         if filename.endswith(".json"):
-    #             # file_path = os.path.join(f"./data_{split}/labels", filename)
-    #             file_path = os.path.join(split_dir, filename)
-    #             filename_without_extension = os.path.splitext(filename)[0]
-    #             image_filename = filename_without_extension + ".png"
-    #             image_path = os.path.join(f"./data_{split}/images", image_filename)
-    #             with open(file_path, "r") as json_file:
-    #                 with Image.open(image_path) as image:
-    #                     json_data = json_file.read()
-    #                     data.append(
-    #                         {
-    #                             "image": image.convert("RGB"),
-    #                             "qa": [
-    #                                 {
-    #                                     "question": 'Find average price for goods in each labels in these images, respond with following json format: ```{"name": <good name, without brand name>, "price": <average price, per L(liter), kg(kilogram) or st(piece)>, "unit": <L, kg or st>}```',
-    #                                     "answer": json_data,
-    #                                 }
-    #                             ],
-    #                         }
-    #                     )
-    #     self.data = data
 
     def __init__(self, base_dir=None, split="train"):
         super().__init__()
@@ -93,7 +69,21 @@ class PriceTagDataset(Dataset):
                                 "image": image.convert("RGB"),
                                 "qa": [
                                     {
-                                        "question": 'Find average price for goods in each labels in these images, respond with following json format: ```{"name": <good name, without brand name>, "price": <average price, per L(liter), kg(kilogram) or st(piece)>, "unit": <L, kg or st>}```',
+                                        "question": """Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
+                                        1. Identify the product name, typically a recognizable item name.
+                                        2. Detect the price, represented as the most prominent number followed by a unit or in close proximity to a unit.
+                                        3. Determine the unit of measurement, which could be "kg", "L", or "st".
+
+                                        Respond exclusively in the JSON format below, with no additional text or explanations. Conclude your response with "<|endoftext|>". Example format:
+
+                                        ```json
+                                        {
+                                            "name": "Ryggfilé Alaska Pollock",
+                                            "price": "133",
+                                            "unit": "kg"
+                                        }
+                                        <|endoftext|>.
+                                        """,
                                         "answer": json_data,
                                     }
                                 ],
@@ -114,11 +104,22 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-weights_path = "./moondream/pretrained_weights_03_13"
+# weights_path = "./moondream/pretrained_weights_03_13"
+# tokenizer_path = "./moondream/pretrained_weights_03_13"
+
+# weights_path = "./checkpoints/moondream-ft"
+# tokenizer_path = "./checkpoints/moondream-ft"
+
+# weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
+# tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
+
+weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_75"
+tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_75"
+
 
 tokenizer = AutoTokenizer.from_pretrained(
     # "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
-    pretrained_model_name_or_path=weights_path
+    pretrained_model_name_or_path=tokenizer_path
 )
 
 moondream = Moondream.from_pretrained(
@@ -136,31 +137,10 @@ def collate_fn(batch):
     images = [sample["image"] for sample in batch]
     # images = torch.stack(moondream.vision_encoder.preprocess(images))
     # images = rearrange(images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
-    preprocessed_large_images, preprocessed_small_images = (
-        moondream.vision_encoder.preprocess_images(images)
+    preprocessed_images = moondream.vision_encoder.preprocess_images(images)
+    preprocessed_images = rearrange(
+        preprocessed_images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14
     )
-
-    # Debugging print statements
-    print(
-        f"Preprocessed large images shape: {preprocessed_large_images.shape if len(preprocessed_large_images) > 0 else 'None'}"
-    )
-    print(
-        f"Preprocessed small images shape: {preprocessed_small_images.shape if len(preprocessed_small_images) > 0 else 'None'}"
-    )
-
-    # Combine large and small images if needed
-    if preprocessed_large_images.size(0) > 0 and preprocessed_small_images.size(0) > 0:
-        try:
-            preprocessed_images = torch.cat(
-                (preprocessed_large_images, preprocessed_small_images), dim=0
-            )
-        except RuntimeError as e:
-            print(f"Error concatenating images: {e}")
-            preprocessed_images = None
-    elif preprocessed_large_images.size(0) > 0:
-        preprocessed_images = preprocessed_large_images
-    else:
-        preprocessed_images = preprocessed_small_images
 
     labels_acc = []
     tokens_acc = []
@@ -321,19 +301,54 @@ def train():
     if USE_WANDB:
         wandb.finish()
 
-    moondream.save_pretrained("checkpoints/moondream-ft")
+    # Save the model and tokenizer locally
+    moondream.save_pretrained(f"checkpoints/moondream-ft_lr_{LR}_epoch_{EPOCHS}")
+    tokenizer.save_pretrained(f"checkpoints/moondream-ft_lr_{LR}_epoch_{EPOCHS}")
+
+
+def image_to_bytes(image):
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format="PNG")  # 使用适当的图像格式
+    img_byte_arr = img_byte_arr.getvalue()
+    return img_byte_arr
 
 
 def test():
-    for test_data in datasets["test"]:
+    test_images = set()
+    for i, test_data in enumerate(datasets["val"]):
+        img_bytes = image_to_bytes(test_data["image"])
+        if img_bytes in test_images:
+            print(f"Duplicate found at index {i}")
+            continue
+        test_images.add(img_bytes)
+
         enc_image = moondream.encode_image(test_data["image"])
-        print(
-            moondream.answer_question(
-                enc_image,
-                'Find average price for goods in each labels in these images, respond with following json format: ```{"name": <good name, without brand name>, "price": <average price, per L(liter), kg(kilogram) or st(piece)>, "unit": <L, kg or st>}```',
-                tokenizer,
-            )
+
+        response = moondream.answer_question(
+            enc_image,
+            """
+            Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
+
+            1. Identify the product name, typically a recognizable item name found in the image.
+            2. Detect the price, represented as the most prominent number followed by a unit or in close proximity to a unit.
+            3. Determine the unit of measurement, which could be "kg", "L", or "st".
+
+            Respond exclusively in the JSON format below, with no additional text or explanations. Conclude your response with "<|endoftext|>". The output should only be one combination of the most likely product name, price, and unit. Example format:
+
+            ```json
+            {
+                "name": "Ryggfilé Alaska Pollock",
+                "price": "133",
+                "unit": "kg"
+            }
+            <|endoftext|>
+            """,
+            tokenizer,
         )
+
+        print(f"Response for image {i}: {response}")
+        for item in test_data["qa"]:
+            print("Ground Truth: \n", json.dumps(item["answer"], indent=4))
 
 
 if __name__ == "__main__":
