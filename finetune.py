@@ -17,7 +17,7 @@ CONTINUE = 1
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
 # DTYPE = torch.float32
 MD_REVISION = "2024-04-02"
-EPOCHS = 500
+EPOCHS = 10
 # Number of samples to process in each batch. Set this to the highest value that doesn't cause an
 # out-of-memory error. Decrease it if you're running out of memory. Batch size 8 currently uses around
 # 15 GB of GPU memory during fine-tuning.
@@ -68,22 +68,23 @@ class PriceTagDataset(Dataset):
                         data.append(
                             {
                                 "image": image.convert("RGB"),
+                                # "image": image.convert("L"),
                                 "qa": [
                                     {
-                                        "question": 
-                                        """
+                                        "question": """
                                         Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
 
                                         1. Identify the product name, typically a recognizable item name found in the image.
-                                        2. Detect the price, represented as the most prominent number followed by a unit or in close proximity to a unit.
-                                        3. Determine the unit of measurement, which could be "kg", "L", or "st".
+                                        2. Determine the unit of measurement, which could be "kg", "L", or "st". If "kg" or "L" occur with "st", prefer to read "kg" or "L" rather than "st".
+                                        3. Detect the price, associated with the identified unit (kg, L, or st). If "kg" or "L" are present in the image, use the price closest to these units. If neither "kg" nor "L" are present, then search for "st" and its respective price.
 
-                                        Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". The output should only be one combination of the most likely product name, price, and unit. Example format:
+                                        Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". 
+                                        The output should only be one combination of the most likely product name, price, and unit. Example format:
 
                                         ```json
                                         {
                                             "name": "Ryggfilé Alaska Pollock",
-                                            "price": "133",
+                                            "avg_price": "133",
                                             "unit": "kg"
                                         }
                                         <|endoftext|>
@@ -108,8 +109,8 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-# weights_path = "./moondream/pretrained_weights_03_13"
-# tokenizer_path = "./moondream/pretrained_weights_03_13"
+weights_path = "./moondream/pretrained_weights_03_13"
+tokenizer_path = "./moondream/pretrained_weights_03_13"
 
 # weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
@@ -117,14 +118,14 @@ datasets = {
 # weights_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
 
-weights_path = "checkpoints/lfs_raw"
-tokenizer_path = "checkpoints/lfs_raw"
+# weights_path = "checkpoints/lfs_raw"
+# tokenizer_path = "checkpoints/lfs_raw"
 
 
 tokenizer = AutoTokenizer.from_pretrained(
     # "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
     pretrained_model_name_or_path=tokenizer_path,
-    trust_remote_code=True
+    trust_remote_code=True,
 )
 
 moondream = Moondream.from_pretrained(
@@ -149,6 +150,7 @@ def collate_fn(batch):
 
     labels_acc = []
     tokens_acc = []
+    ground_truth_answers = []
 
     for sample in batch:
         toks = [tokenizer.bos_token_id]
@@ -166,6 +168,10 @@ def collate_fn(batch):
             ).input_ids
             toks.extend(a_t)
             labs.extend(a_t)
+
+            ground_truth_answers.append(
+                qa["answer"]
+            )  # Collect unencoded ground truth answers
 
         tokens_acc.append(toks)
         labels_acc.append(labs)
@@ -189,16 +195,115 @@ def collate_fn(batch):
         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
         torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
         torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
+        ground_truth_answers,  # Return unencoded ground truth answers
     )
 
 
+# def compute_loss(batch):
+#     images, tokens, labels, attn_mask = batch
+
+#     images = images.to(DEVICE)
+#     tokens = tokens.to(DEVICE)
+#     labels = labels.to(DEVICE)
+#     attn_mask = attn_mask.to(DEVICE)
+
+#     with torch.no_grad():
+#         img_embs = moondream.vision_encoder.encoder(images)
+#         img_embs = moondream.vision_encoder.projection(img_embs)
+
+#     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
+#     inputs_embeds = torch.cat(
+#         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+#     )
+
+#     outputs = moondream.text_model(
+#         inputs_embeds=inputs_embeds,
+#         labels=labels,
+#         attention_mask=attn_mask,
+#     )
+
+#     return outputs.loss
+
+
+def custom_loss(decoded_answers, ground_truth_answers):
+    reg_loss = 0
+
+    for i, decoded_answer in enumerate(decoded_answers):
+        try:
+            response = json.loads(decoded_answer)
+        except json.JSONDecodeError:
+            reg_loss += 10  # Penalty for invalid JSON format
+            continue
+
+        # Parse ground truth answer
+        try:
+            ground_truth = json.loads(ground_truth_answers[i])
+        except json.JSONDecodeError:
+            continue
+
+        # Check format
+        if not all(key in response for key in ["name", "avg_price", "unit"]):
+            reg_loss += 10  # Penalty for missing keys
+            continue
+
+        # Check unit
+        ground_truth_unit = ground_truth["unit"]
+        if response["unit"] != ground_truth_unit:
+            reg_loss += 10  # Large penalty for incorrect unit
+            continue
+
+        # Check avg_price
+        try:
+            # Remove decimal points and concatenate the parts for comparison
+            ground_truth_price_str = ground_truth["avg_price"].replace(".", "")
+            response_price_str = response["avg_price"].replace(".", "")
+
+            # Compare lengths
+            if len(response_price_str) != len(ground_truth_price_str):
+                reg_loss += 5  # Penalty for length mismatch
+                # Adjust lengths for comparison
+                if len(response_price_str) < len(ground_truth_price_str):
+                    response_price_str = response_price_str.zfill(
+                        len(ground_truth_price_str)
+                    )
+                else:
+                    ground_truth_price_str = ground_truth_price_str.zfill(
+                        len(response_price_str)
+                    )
+
+            # Compare digit by digit
+            for gt_digit, res_digit in zip(ground_truth_price_str, response_price_str):
+                if gt_digit != res_digit:
+                    reg_loss += 3  # Penalty for each incorrect digit
+
+            # Compare the decimal points
+            ground_truth_parts = ground_truth["avg_price"].split(".")
+            response_parts = response["avg_price"].split(".")
+
+            # Check if both parts have decimal points
+            if len(ground_truth_parts) == 2 and len(response_parts) == 2:
+                if len(ground_truth_parts[1]) != len(response_parts[1]):
+                    reg_loss += 3  # Penalty for different decimal part lengths
+            else:
+                reg_loss += 3  # Penalty if one of them is missing the decimal part
+        except ValueError:
+            reg_loss += 5  # Penalty for invalid avg_price format
+
+        # Optionally check the name (not requested but can be added)
+        if response["name"] != ground_truth["name"]:
+            reg_loss += 1  # Small penalty for incorrect name
+
+    return reg_loss / 10
+
+
 def compute_loss(batch):
-    images, tokens, labels, attn_mask = batch
+    images, tokens, labels, attn_mask, ground_truth_answers = batch
 
     images = images.to(DEVICE)
     tokens = tokens.to(DEVICE)
     labels = labels.to(DEVICE)
     attn_mask = attn_mask.to(DEVICE)
+    # ground_truth_answers = ground_truth_answers.to(DEVICE)
 
     with torch.no_grad():
         img_embs = moondream.vision_encoder.encoder(images)
@@ -209,13 +314,25 @@ def compute_loss(batch):
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
 
+    with torch.no_grad():
+        generated_ids = moondream.text_model.generate(
+            inputs_embeds=inputs_embeds,
+            max_new_tokens=32,
+        )
+        # ).cpu()
+        decoded_answers = tokenizer.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )
+
+    reg_loss = custom_loss(decoded_answers, ground_truth_answers)
+
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,
         labels=labels,
         attention_mask=attn_mask,
     )
 
-    return outputs.loss
+    return outputs.loss + reg_loss * torch.norm(outputs.loss)
 
 
 def lr_schedule(step, max_steps):
@@ -335,15 +452,16 @@ def test():
             Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
 
             1. Identify the product name, typically a recognizable item name found in the image.
-            2. Detect the price, represented as the most prominent number followed by a unit or in close proximity to a unit.
-            3. Determine the unit of measurement, which could be "kg", "L", or "st".
+            2. Determine the unit of measurement, which could be "kg", "L", or "st". If "kg" or "L" occur with "st", prefer to read "kg" or "L" rather than "st".
+            3. Detect the price, associated with the identified unit (kg, L, or st). If "kg" or "L" are present in the image, use the price closest to these units. If neither "kg" nor "L" are present, then search for "st" and its respective price.
 
-            Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". The output should only be one combination of the most likely product name, price, and unit. Example format:
+            Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". 
+            The output should only be one combination of the most likely product name, price, and unit. Example format:
 
             ```json
             {
                 "name": "Ryggfilé Alaska Pollock",
-                "price": "133",
+                "avg_price": "133",
                 "unit": "kg"
             }
             <|endoftext|>

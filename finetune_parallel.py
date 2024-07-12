@@ -48,10 +48,12 @@ class PriceTagDataset(Dataset):
                 with open(file_path, "r") as json_file:
                     json_data = json.load(json_file)
                     with Image.open(image_path) as image:
-                        data.append({
-                            "image": image.convert("RGB"),
-                            "qa": [{
-                                "question": """
+                        data.append(
+                            {
+                                "image": image.convert("RGB"),
+                                "qa": [
+                                    {
+                                        "question": """
                                 Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
                                 1. Identify the product name, typically a recognizable item name found in the image.
                                 2. Detect the price, represented as the most prominent number associated with a unit or in close proximity to a unit.
@@ -60,13 +62,15 @@ class PriceTagDataset(Dataset):
                                 ```json
                                 {
                                     "name": "Ryggfilé Alaska Pollock",
-                                    "price": "133",
+                                    "avg_price": "133",
                                     "unit": "kg"
                                 }
                                 """,
-                                "answer": json_data,
-                            }]
-                        })
+                                        "answer": json_data,
+                                    }
+                                ],
+                            }
+                        )
         self.data = data
 
     def __len__(self):
@@ -79,7 +83,9 @@ class PriceTagDataset(Dataset):
 def collate_fn(batch):
     images = [sample["image"] for sample in batch]
     preprocessed_images = moondream.vision_encoder.preprocess_images(images)
-    preprocessed_images = rearrange(preprocessed_images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
+    preprocessed_images = rearrange(
+        preprocessed_images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14
+    )
 
     labels_acc = []
     tokens_acc = []
@@ -87,10 +93,14 @@ def collate_fn(batch):
         toks = [tokenizer.bos_token_id]
         labs = [-100] * (IMG_TOKENS + 1)
         for qa in sample["qa"]:
-            q_t = tokenizer(f"\n\nQuestion: {qa['question']}\n\nAnswer:", add_special_tokens=False).input_ids
+            q_t = tokenizer(
+                f"\n\nQuestion: {qa['question']}\n\nAnswer:", add_special_tokens=False
+            ).input_ids
             toks.extend(q_t)
             labs.extend([-100] * len(q_t))
-            a_t = tokenizer(f" {qa['answer']}{ANSWER_EOS}", add_special_tokens=False).input_ids
+            a_t = tokenizer(
+                f" {qa['answer']}{ANSWER_EOS}", add_special_tokens=False
+            ).input_ids
             toks.extend(a_t)
             labs.extend(a_t)
         tokens_acc.append(toks)
@@ -118,8 +128,7 @@ tokenizer_path = "checkpoints/lfs_raw"
 
 
 tokenizer = AutoTokenizer.from_pretrained(
-    pretrained_model_name_or_path=tokenizer_path,
-    trust_remote_code=True
+    pretrained_model_name_or_path=tokenizer_path, trust_remote_code=True
 )
 
 moondream = Moondream.from_pretrained(
@@ -142,8 +151,12 @@ def compute_loss(batch, rank):
         img_embs = moondream.vision_encoder.encoder(images)
         img_embs = moondream.vision_encoder.projection(img_embs)
     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
-    inputs_embeds = torch.cat((tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1)
-    outputs = moondream.text_model(inputs_embeds=inputs_embeds, labels=labels, attention_mask=attn_mask)
+    inputs_embeds = torch.cat(
+        (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+    )
+    outputs = moondream.text_model(
+        inputs_embeds=inputs_embeds, labels=labels, attention_mask=attn_mask
+    )
     return outputs.loss
 
 
@@ -164,8 +177,8 @@ datasets = {
 
 # Initialize the process group
 def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 
@@ -182,19 +195,25 @@ def train(rank, world_size):
         "train": DataLoader(
             datasets["train"],
             batch_size=BATCH_SIZE,
-            sampler=DistributedSampler(datasets["train"], num_replicas=world_size, rank=rank),
+            sampler=DistributedSampler(
+                datasets["train"], num_replicas=world_size, rank=rank
+            ),
             collate_fn=collate_fn,
         ),
         "val": DataLoader(
             datasets["val"],
             batch_size=BATCH_SIZE,
-            sampler=DistributedSampler(datasets["val"], num_replicas=world_size, rank=rank),
+            sampler=DistributedSampler(
+                datasets["val"], num_replicas=world_size, rank=rank
+            ),
             collate_fn=collate_fn,
         ),
         "test": DataLoader(
             datasets["test"],
             batch_size=BATCH_SIZE,
-            sampler=DistributedSampler(datasets["test"], num_replicas=world_size, rank=rank),
+            sampler=DistributedSampler(
+                datasets["test"], num_replicas=world_size, rank=rank
+            ),
             collate_fn=collate_fn,
         ),
     }
@@ -270,7 +289,9 @@ def train(rank, world_size):
     # Save the model and tokenizer locally
     if rank == 0:
         model_to_save = model.module  # Get the actual model from DDP
-        moondream.text_model.save_pretrained(f"checkpoints/moondream-ft_lr_{LR}_epoch_{EPOCHS}")
+        moondream.text_model.save_pretrained(
+            f"checkpoints/moondream-ft_lr_{LR}_epoch_{EPOCHS}"
+        )
         tokenizer.save_pretrained(f"checkpoints/moondream-ft_lr_{LR}_epoch_{EPOCHS}")
 
     cleanup()
@@ -308,7 +329,7 @@ def test():
             ```json
             {
                 "name": "Ryggfilé Alaska Pollock",
-                "price": "133",
+                "avg_price": "133",
                 "unit": "kg"
             }
             

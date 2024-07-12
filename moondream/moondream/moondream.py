@@ -126,8 +126,8 @@ class Moondream(PreTrainedModel):
     # ):
     #     # 简化的示例响应
     #     example_response = [
-    #         {"name": "Torskifle", "price": 0.49, "unit": "kg"},
-    #         {"name": "Notafar", "price": 0.4, "unit": "kg"},
+    #         {"name": "Torskifle", "avg_price": 0.49, "unit": "kg"},
+    #         {"name": "Notafar", "avg_price": 0.4, "unit": "kg"},
     #     ]
     #     response_json = json.dumps(example_response)
     #     return response_json
