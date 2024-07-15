@@ -109,8 +109,8 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-weights_path = "./moondream/pretrained_weights_03_13"
-tokenizer_path = "./moondream/pretrained_weights_03_13"
+weights_path = "./checkpoints/pretrained_weights_05_20"
+tokenizer_path = "./checkpoints/pretrained_weights_05_20"
 
 # weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
@@ -141,12 +141,7 @@ moondream = Moondream.from_pretrained(
 
 def collate_fn(batch):
     images = [sample["image"] for sample in batch]
-    # images = torch.stack(moondream.vision_encoder.preprocess(images))
-    # images = rearrange(images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
-    preprocessed_images = moondream.vision_encoder.preprocess_images(images)
-    preprocessed_images = rearrange(
-        preprocessed_images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14
-    )
+    images = [moondream.vision_encoder.preprocess(image) for image in images]
 
     labels_acc = []
     tokens_acc = []
@@ -191,7 +186,7 @@ def collate_fn(batch):
         attn_mask_acc.append([1] * len_i + [0] * pad_i)
 
     return (
-        preprocessed_images.to(dtype=DTYPE),
+        images,
         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
         torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
         torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
@@ -199,30 +194,65 @@ def collate_fn(batch):
     )
 
 
-# def compute_loss(batch):
-#     images, tokens, labels, attn_mask = batch
-
-#     images = images.to(DEVICE)
-#     tokens = tokens.to(DEVICE)
-#     labels = labels.to(DEVICE)
-#     attn_mask = attn_mask.to(DEVICE)
-
-#     with torch.no_grad():
-#         img_embs = moondream.vision_encoder.encoder(images)
-#         img_embs = moondream.vision_encoder.projection(img_embs)
-
-#     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
-#     inputs_embeds = torch.cat(
-#         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+# def collate_fn(batch):
+#     images = [sample["image"] for sample in batch]
+#     # images = torch.stack(moondream.vision_encoder.preprocess(images))
+#     # images = rearrange(images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
+#     preprocessed_images = moondream.vision_encoder.preprocess_images(images)
+#     images = [moondream.vision_encoder.preprocess(image) for image in images]
+#     preprocessed_images = rearrange(
+#         preprocessed_images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14
 #     )
 
-#     outputs = moondream.text_model(
-#         inputs_embeds=inputs_embeds,
-#         labels=labels,
-#         attention_mask=attn_mask,
-#     )
+#     labels_acc = []
+#     tokens_acc = []
+#     ground_truth_answers = []
 
-#     return outputs.loss
+#     for sample in batch:
+#         toks = [tokenizer.bos_token_id]
+#         labs = [-100] * (IMG_TOKENS + 1)
+
+#         for qa in sample["qa"]:
+#             q_t = tokenizer(
+#                 f"\n\nQuestion: {qa['question']}\n\nAnswer:", add_special_tokens=False
+#             ).input_ids
+#             toks.extend(q_t)
+#             labs.extend([-100] * len(q_t))
+
+#             a_t = tokenizer(
+#                 f" {qa['answer']}{ANSWER_EOS}", add_special_tokens=False
+#             ).input_ids
+#             toks.extend(a_t)
+#             labs.extend(a_t)
+
+#             ground_truth_answers.append(
+#                 qa["answer"]
+#             )  # Collect unencoded ground truth answers
+
+#         tokens_acc.append(toks)
+#         labels_acc.append(labs)
+
+#     max_len = -1
+#     for labels in labels_acc:
+#         max_len = max(max_len, len(labels))
+
+#     attn_mask_acc = []
+
+#     for i in range(len(batch)):
+#         len_i = len(labels_acc[i])
+#         pad_i = max_len - len_i
+
+#         labels_acc[i].extend([-100] * pad_i)
+#         tokens_acc[i].extend([tokenizer.eos_token_id] * pad_i)
+#         attn_mask_acc.append([1] * len_i + [0] * pad_i)
+
+#     return (
+#         preprocessed_images.to(dtype=DTYPE),
+#         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
+#         torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
+#         torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
+#         ground_truth_answers,  # Return unencoded ground truth answers
+#     )
 
 
 def custom_loss(decoded_answers, ground_truth_answers):
@@ -296,17 +326,44 @@ def custom_loss(decoded_answers, ground_truth_answers):
     return reg_loss / 10
 
 
+# def compute_loss(batch):
+#     images, tokens, labels, attn_mask = batch
+
+#     images = images.to(DEVICE)
+#     tokens = tokens.to(DEVICE)
+#     labels = labels.to(DEVICE)
+#     attn_mask = attn_mask.to(DEVICE)
+
+#     with torch.no_grad():
+#         img_embs = moondream.vision_encoder.encoder(images)
+#         img_embs = moondream.vision_encoder.projection(img_embs)
+
+#     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
+#     inputs_embeds = torch.cat(
+#         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+#     )
+
+#     outputs = moondream.text_model(
+#         inputs_embeds=inputs_embeds,
+#         labels=labels,
+#         attention_mask=attn_mask,
+#     )
+
+#     return outputs.loss
+
+
 def compute_loss(batch):
     images, tokens, labels, attn_mask, ground_truth_answers = batch
 
-    images = images.to(DEVICE)
+    # images = images.to(DEVICE)
     tokens = tokens.to(DEVICE)
     labels = labels.to(DEVICE)
     attn_mask = attn_mask.to(DEVICE)
     # ground_truth_answers = ground_truth_answers.to(DEVICE)
 
     with torch.no_grad():
-        img_embs = moondream.vision_encoder.encoder(images)
+        img_embs = moondream.vision_encoder(images)
+        # img_embs = moondream.vision_encoder.encoder(images)
         img_embs = moondream.vision_encoder.projection(img_embs)
 
     tok_embs = moondream.text_model.get_input_embeddings()(tokens)

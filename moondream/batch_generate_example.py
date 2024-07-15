@@ -5,10 +5,12 @@ from PIL import Image
 device, dtype = detect_device()
 
 model_id = "vikhyatk/moondream2"
+MD_REVISION = "2024-05-20"
+
 tokenizer = AutoTokenizer.from_pretrained(model_id, revision=LATEST_REVISION)
 moondream = Moondream.from_pretrained(
     model_id,
-    revision=LATEST_REVISION,
+    revision=MD_REVISION,
     torch_dtype=dtype,
 ).to(device=device)
 moondream.eval()

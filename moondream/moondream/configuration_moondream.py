@@ -20,8 +20,7 @@ class PhiConfig(PretrainedConfig):
         max_position_embeddings=2048,
         initializer_range=0.02,
         layer_norm_eps=1e-5,
-        # use_cache=True,
-        use_cache=False,
+        use_cache=True,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
@@ -95,5 +94,5 @@ class MoondreamConfig(PretrainedConfig):
     model_type = "moondream1"
 
     def __init__(self, **kwargs):
-        self.phi_config = PhiConfig(**kwargs)
+        self.text_config = PhiConfig(**kwargs.pop("text_config", {}))
         super().__init__(**kwargs)

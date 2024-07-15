@@ -2,12 +2,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
 model_id = "vikhyatk/moondream2"
-# revision = "2024-05-20"
-revision = "2024-03-13"
+revision = "2024-05-20"
+# revision = "2024-03-13"
 local_model_path = (
     # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights"
-    # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights_03_13"
-    "/home/wch/Documents/Github/label-recognizer/checkpoints/moondream2"
+    # "/home/karl/Documents/Github/label-recognizer/checkpoints/pretrained_weights_03_13"
+    "/home/karl/Documents/Github/label-recognizer/checkpoints/pretrained_weights_05_20"
+    # "/home/wch/Documents/Github/label-recognizer/checkpoints/moondream2"
 )
 
 DTYPE = torch.float32

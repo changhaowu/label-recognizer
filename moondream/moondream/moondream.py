@@ -2,12 +2,9 @@ import torch
 from .vision_encoder import VisionEncoder
 from .configuration_moondream import MoondreamConfig
 from transformers import PreTrainedModel
-import re
-import json
 
 from .modeling_phi import PhiForCausalLM
 from .configuration_moondream import PhiConfig
-
 
 class Moondream(PreTrainedModel):
     config_class = MoondreamConfig
@@ -15,14 +12,16 @@ class Moondream(PreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.vision_encoder = VisionEncoder()
+        self.vision_encoder = VisionEncoder(
+            use_flash_attn=config._attn_implementation == "flash_attention_2"
+        )
 
-        if type(config.phi_config) == dict:
+        if type(config.text_config) == dict:
             phi_config = PhiConfig(
-                **config.phi_config, attn_implementation=config._attn_implementation
+                **config.text_config, attn_implementation=config._attn_implementation
             )
         else:
-            phi_config = config.phi_config
+            phi_config = config.text_config
         self.text_model = PhiForCausalLM(phi_config)
 
     @property
@@ -30,7 +29,8 @@ class Moondream(PreTrainedModel):
         return self.text_model.device
 
     def encode_image(self, image):
-        return self.vision_encoder(image)
+        with torch.no_grad():
+            return self.vision_encoder(image)
 
     def input_embeds(self, prompt, image_embeds, tokenizer):
         def _tokenize(txt):
@@ -59,21 +59,21 @@ class Moondream(PreTrainedModel):
 
         return torch.cat(embeds, dim=1)
 
+    def get_input_embeddings(self):
+        return self.text_model.get_input_embeddings()
+
     def generate(
         self,
         image_embeds,
         prompt,
         tokenizer,
-        eos_text="<END>",
-        max_new_tokens=32,
+        max_new_tokens=128,
         **kwargs,
     ):
-        eos_tokens = tokenizer(eos_text, add_special_tokens=False)[0].ids
-
         generate_config = {
-            "eos_token_id": eos_tokens,
+            "eos_token_id": tokenizer.eos_token_id,
             "bos_token_id": tokenizer.bos_token_id,
-            "pad_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.bos_token_id,
             "max_new_tokens": max_new_tokens,
             **kwargs,
         }
@@ -99,38 +99,17 @@ class Moondream(PreTrainedModel):
         answer = self.generate(
             image_embeds,
             prompt,
-            eos_text="<END>",
             tokenizer=tokenizer,
-            # max_new_tokens=512,
-            max_new_tokens=32,
+            max_new_tokens=512,
             **kwargs,
         )[0]
-
-        # 修改正则表达式，确保正确去除结束标记
-        cleaned_answer = re.sub(r"<END>$", "", answer).strip()
+        cleaned_answer = answer.strip()
 
         # Use the result_queue to pass the result if it is provided
         if result_queue:
             result_queue.put(cleaned_answer)
         else:
             return cleaned_answer
-
-    # def answer_question(
-    #     self,
-    #     image_embeds,
-    #     question,
-    #     tokenizer,
-    #     chat_history="",
-    #     result_queue=None,
-    #     **kwargs,
-    # ):
-    #     # 简化的示例响应
-    #     example_response = [
-    #         {"name": "Torskifle", "avg_price": 0.49, "unit": "kg"},
-    #         {"name": "Notafar", "avg_price": 0.4, "unit": "kg"},
-    #     ]
-    #     response_json = json.dumps(example_response)
-    #     return response_json
 
     def batch_answer(
         self,
@@ -139,8 +118,6 @@ class Moondream(PreTrainedModel):
         tokenizer,
         **kwargs,
     ):
-        eos_tokens = tokenizer("<END>", add_special_tokens=False)[0].ids
-
         image_embeds = self.encode_image(images)
 
         templated_prompts = [
@@ -181,11 +158,10 @@ class Moondream(PreTrainedModel):
         )
 
         generate_config = {
-            "eos_token_id": eos_tokens,
+            "eos_token_id": tokenizer.eos_token_id,
             "bos_token_id": tokenizer.bos_token_id,
-            "pad_token_id": tokenizer.eos_token_id,
-            # "max_new_tokens": 512,
-            "max_new_tokens": 64,
+            "pad_token_id": tokenizer.bos_token_id,
+            "max_new_tokens": 512,
             **kwargs,
         }
 
@@ -197,6 +173,6 @@ class Moondream(PreTrainedModel):
             )
 
         return [
-            re.sub("<$|<END$", "", x).strip()
+            x.strip()
             for x in tokenizer.batch_decode(output_ids, skip_special_tokens=True)
         ]
