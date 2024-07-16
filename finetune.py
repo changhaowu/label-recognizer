@@ -255,6 +255,39 @@ def collate_fn(batch):
 #     )
 
 
+def convert_to_numeric(decoded_answers, ground_truth_answers):
+    numeric_data = []
+
+    for i, decoded_answer in enumerate(decoded_answers):
+        try:
+            response = json.loads(decoded_answer)
+            ground_truth = json.loads(ground_truth_answers[i])
+
+            response_price = float(response["avg_price"].replace(".", ""))
+            ground_truth_price = float(ground_truth["avg_price"].replace(".", ""))
+
+            response_unit = len(response["unit"])
+            ground_truth_unit = len(ground_truth["unit"])
+
+            response_name = sum([ord(char) for char in response["name"]])
+            ground_truth_name = sum([ord(char) for char in ground_truth["name"]])
+
+            numeric_data.append(
+                [
+                    response_price,
+                    ground_truth_price,
+                    response_unit,
+                    ground_truth_unit,
+                    response_name,
+                    ground_truth_name,
+                ]
+            )
+        except json.JSONDecodeError:
+            numeric_data.append([0, 0, 0, 0, 0, 0])
+
+    return numeric_data
+
+
 def custom_loss(decoded_answers, ground_truth_answers):
     reg_loss = 0
 
@@ -372,17 +405,11 @@ def compute_loss(batch):
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
 
-    # print("input inputs_embeds shape:", inputs_embeds.shape)
-    # print("input attn_mask shape:", attn_mask.shape)
-
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,
         labels=labels,
         attention_mask=attn_mask,
     )
-
-    # print("inputs_embeds shape:", inputs_embeds.shape)
-    # print("attn_mask shape:", attn_mask.shape)
 
     generated_ids = moondream.text_model.generate(
         inputs_embeds=inputs_embeds,
@@ -392,7 +419,10 @@ def compute_loss(batch):
     )
     decoded_answers = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
-    reg_loss = custom_loss(decoded_answers, ground_truth_answers)
+    numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
+    numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
+
+    reg_loss = custom_loss(decoded_answers, ground_truth_answers, reg_loss)
 
     # return outputs.loss + reg_loss * torch.norm(outputs.loss)
     return outputs.loss, reg_loss
