@@ -24,9 +24,9 @@ class Moondream(PreTrainedModel):
             )
         else:
             phi_config = config.text_config
-        print("Calling text_model for the first time")
+        print("Creating text_model instance")
         self.text_model = PhiForCausalLM(phi_config)
-        print("Called text_model for the first time")
+        print("Created text_model instance")
 
     @property
     def device(self):

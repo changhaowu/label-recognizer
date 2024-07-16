@@ -358,7 +358,9 @@ def compute_loss(batch):
     tokens = tokens.to(DEVICE)
     labels = labels.to(DEVICE)
     attn_mask = attn_mask.to(DEVICE)
-    # ground_truth_answers = ground_truth_answers.to(DEVICE)
+
+    print("ground_truth_answers:", ground_truth_answers)
+    ground_truth_answers = ground_truth_answers.to(DEVICE)
 
     with torch.no_grad():
         img_embs = moondream.vision_encoder(images)
@@ -370,8 +372,8 @@ def compute_loss(batch):
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
 
-    print("input inputs_embeds shape:", inputs_embeds.shape)
-    print("input attn_mask shape:", attn_mask.shape)
+    # print("input inputs_embeds shape:", inputs_embeds.shape)
+    # print("input attn_mask shape:", attn_mask.shape)
 
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,
@@ -379,19 +381,21 @@ def compute_loss(batch):
         attention_mask=attn_mask,
     )
 
-    print("inputs_embeds shape:", inputs_embeds.shape)
-    print("attn_mask shape:", attn_mask.shape)
+    # print("inputs_embeds shape:", inputs_embeds.shape)
+    # print("attn_mask shape:", attn_mask.shape)
 
     generated_ids = moondream.text_model.generate(
         inputs_embeds=inputs_embeds,
         max_new_tokens=32,
-        # attention_mask=attn_mask,
+        attention_mask=attn_mask,
+        pad_token_id=tokenizer.eos_token_id,
     )
     decoded_answers = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
     reg_loss = custom_loss(decoded_answers, ground_truth_answers)
 
-    return outputs.loss + reg_loss * torch.norm(outputs.loss)
+    # return outputs.loss + reg_loss * torch.norm(outputs.loss)
+    return outputs.loss, reg_loss
 
 
 def lr_schedule(step, max_steps):
@@ -451,11 +455,22 @@ def train():
 
     i = 0
     for epoch in range(EPOCHS):
+        epoch_ce_loss = 0.0
+        epoch_reg_loss = 0.0
+        epoch_steps = 0
+
         for batch in tqdm(dataloaders["train"], desc=f"Epoch {epoch + 1}/{EPOCHS}"):
             i += 1
 
-            loss = compute_loss(batch)
+            # print("the batch:", i)
+            ce_loss, reg_loss = compute_loss(batch)
+            loss = ce_loss + reg_loss * torch.norm(ce_loss)
             loss.backward()
+
+            # 累积损失
+            epoch_ce_loss += ce_loss.item()
+            epoch_reg_loss += reg_loss.item()
+            epoch_steps += 1
 
             if i % GRAD_ACCUM_STEPS == 0:
                 optimizer.step()
@@ -478,6 +493,15 @@ def train():
                     {"loss/train": loss.item(), "lr": optimizer.param_groups[0]["lr"]}
                     | ({"loss/val": val_loss} if i % 10 == 0 else {})
                 )
+
+        # 计算每个 epoch 的平均损失
+        avg_ce_loss = epoch_ce_loss / epoch_steps
+        avg_reg_loss = epoch_reg_loss / epoch_steps
+
+        # 打印每个 epoch 的损失
+        print(
+            f"Epoch {epoch + 1}/{EPOCHS} - Avg CE Loss: {avg_ce_loss:.4f}, Avg Reg Loss: {avg_reg_loss:.4f}"
+        )
 
     if USE_WANDB:
         wandb.finish()

@@ -15,6 +15,7 @@
 
 """ PyTorch Phi model."""
 
+import traceback
 
 import math
 from typing import List, Optional, Tuple, Union
@@ -217,6 +218,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     # print(f"cos shape: {cos.shape}")
     # print(f"sin shape: {sin.shape}")
     # print(f"position_ids shape: {position_ids.shape} \n")
+    # print(f"position_ids: {position_ids} \n")
 
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
@@ -859,8 +861,29 @@ class PhiModel(PhiPreTrainedModel):
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
 
-        self.forward_call_count += 1
-        print(f"Forward call count: {self.forward_call_count}")
+        # self.forward_call_count += 1
+        # print(f"Forward call count: {self.forward_call_count}")
+
+        # # Print the stack trace
+        # print("Stack trace for the call:")
+        # traceback.print_stack()
+
+        # Ensure attention_mask matches the inputs_embeds size
+        if inputs_embeds is not None:
+            batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
+            if attention_mask is not None:
+                if attention_mask.size(1) != seq_length:
+                    # print(
+                    #     f"Adjusting attention_mask from size {attention_mask.size(1)} to {seq_length}"
+                    # )
+                    attention_mask = attention_mask[:, :seq_length]
+
+                if position_ids is not None:
+                    if position_ids.size(1) != seq_length:
+                        # print(
+                        #     f"Adjusting position_ids from size {position_ids.size(1)} to {seq_length}"
+                        # )
+                        position_ids = position_ids[:, :seq_length]
 
         output_attentions = (
             output_attentions
@@ -929,16 +952,16 @@ class PhiModel(PhiPreTrainedModel):
                 else None
             )
         else:
-            # 调试信息
-            print(f"batch_size: {inputs_embeds.size(0)}")
-            print(f"seq_length: {inputs_embeds.size(1)}")
-            print(f"inputs_embeds shape: {inputs_embeds.shape}")
-            print(f"past_key_values_length: {past_key_values_length}")
+            # # 调试信息
+            # print(f"batch_size: {inputs_embeds.size(0)}")
+            # print(f"seq_length: {inputs_embeds.size(1)}")
+            # print(f"inputs_embeds shape: {inputs_embeds.shape}")
+            # print(f"past_key_values_length: {past_key_values_length}")
 
-            print(
-                "attention_mask shape before preparing 4d mask:", attention_mask.shape
-            )
-            print("attention_mask values before preparing 4d mask:", attention_mask)
+            # print(
+            #     "attention_mask shape before preparing 4d mask:", attention_mask.shape
+            # )
+            # print("attention_mask values before preparing 4d mask:", attention_mask)
 
             # 4d mask is passed through the layers
             attention_mask = _prepare_4d_causal_attention_mask(
@@ -1025,6 +1048,7 @@ class CausalLMHead(nn.Module):
 
 class PhiForCausalLM(PhiPreTrainedModel):
     _tied_weights_keys = ["lm_head.linear.weight"]
+    # instance_count = 0
 
     # Copied from transformers.models.llama.modeling_llama.LlamaForCausalLM.__init__ with Llama->Phi,bias=False->bias=True
     def __init__(self, config):
@@ -1035,6 +1059,10 @@ class PhiForCausalLM(PhiPreTrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
+
+        # # Increment and print instance count
+        # PhiForCausalLM.instance_count += 1
+        # print(f"PhiForCausalLM instance count: {PhiForCausalLM.instance_count}")
 
     # Copied from transformers.models.llama.modeling_llama.LlamaForCausalLM.get_input_embeddings
     def get_input_embeddings(self):
@@ -1099,7 +1127,7 @@ class PhiForCausalLM(PhiPreTrainedModel):
         'This is an example script .\n\n\n\nfrom typing import List\n\ndef find_most_common_letter(words: List[str'
         ```"""
 
-        print("PhiForCausalLM forward called")
+        # print("PhiForCausalLM forward called")
 
         output_attentions = (
             output_attentions
