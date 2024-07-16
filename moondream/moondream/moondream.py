@@ -6,6 +6,7 @@ from transformers import PreTrainedModel
 from .modeling_phi import PhiForCausalLM
 from .configuration_moondream import PhiConfig
 
+
 class Moondream(PreTrainedModel):
     config_class = MoondreamConfig
     _supports_flash_attn_2 = True
@@ -16,13 +17,16 @@ class Moondream(PreTrainedModel):
             use_flash_attn=config._attn_implementation == "flash_attention_2"
         )
 
+        print("type of config", type(config.text_config))
         if type(config.text_config) == dict:
             phi_config = PhiConfig(
                 **config.text_config, attn_implementation=config._attn_implementation
             )
         else:
             phi_config = config.text_config
+        print("Calling text_model for the first time")
         self.text_model = PhiForCausalLM(phi_config)
+        print("Called text_model for the first time")
 
     @property
     def device(self):

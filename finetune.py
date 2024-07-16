@@ -355,7 +355,6 @@ def custom_loss(decoded_answers, ground_truth_answers):
 def compute_loss(batch):
     images, tokens, labels, attn_mask, ground_truth_answers = batch
 
-    # images = images.to(DEVICE)
     tokens = tokens.to(DEVICE)
     labels = labels.to(DEVICE)
     attn_mask = attn_mask.to(DEVICE)
@@ -364,30 +363,33 @@ def compute_loss(batch):
     with torch.no_grad():
         img_embs = moondream.vision_encoder(images)
         # img_embs = moondream.vision_encoder.encoder(images)
-        img_embs = moondream.vision_encoder.projection(img_embs)
+        # img_embs = moondream.vision_encoder.projection(img_embs)
 
     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
     inputs_embeds = torch.cat(
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
 
-    with torch.no_grad():
-        generated_ids = moondream.text_model.generate(
-            inputs_embeds=inputs_embeds,
-            max_new_tokens=32,
-        )
-        # ).cpu()
-        decoded_answers = tokenizer.batch_decode(
-            generated_ids, skip_special_tokens=True
-        )
-
-    reg_loss = custom_loss(decoded_answers, ground_truth_answers)
+    print("input inputs_embeds shape:", inputs_embeds.shape)
+    print("input attn_mask shape:", attn_mask.shape)
 
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,
         labels=labels,
         attention_mask=attn_mask,
     )
+
+    print("inputs_embeds shape:", inputs_embeds.shape)
+    print("attn_mask shape:", attn_mask.shape)
+
+    generated_ids = moondream.text_model.generate(
+        inputs_embeds=inputs_embeds,
+        max_new_tokens=32,
+        # attention_mask=attn_mask,
+    )
+    decoded_answers = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+
+    reg_loss = custom_loss(decoded_answers, ground_truth_answers)
 
     return outputs.loss + reg_loss * torch.norm(outputs.loss)
 
