@@ -17,11 +17,11 @@ CONTINUE = 1
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
 # DTYPE = torch.float32
 MD_REVISION = "2024-04-02"
-EPOCHS = 1
+EPOCHS = 10
 # Number of samples to process in each batch. Set this to the highest value that doesn't cause an
 # out-of-memory error. Decrease it if you're running out of memory. Batch size 8 currently uses around
 # 15 GB of GPU memory during fine-tuning.
-BATCH_SIZE = 1
+BATCH_SIZE = 8
 # Number of batches to process before updating the model. You can use this to simulate a higher batch
 # size than your GPU can handle. Set this to 1 to disable gradient accumulation.
 GRAD_ACCUM_STEPS = 1
@@ -41,29 +41,6 @@ USE_WANDB = False
 ANSWER_EOS = "<|endoftext|>"
 # Number of tokens used to represent each image.
 IMG_TOKENS = 729
-
-MAX_NEW_TOKENS = 128
-# MODE = "TRAIN"
-MODE = "reg"
-
-PROMPT = """
-        Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
-
-        1. Identify the product name, typically a recognizable item name found in the image.
-        2. Determine the unit of measurement, which could be "kg", "L", or "st". If "kg" or "L" occur with "st", prefer to read "kg" or "L" rather than "st".
-        3. Detect the price, associated with the identified unit (kg, L, or st). If "kg" or "L" are present in the image, use the price closest to these units. If neither "kg" nor "L" are present, then search for "st" and its respective price.
-
-        Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". 
-        The output should only be one combination of the most likely product name, price, and unit. Example format:
-
-        ```json
-        {
-            "name": "Ryggfilé Alaska Pollock",
-            "avg_price": "133",
-            "unit": "kg"
-        }
-        <|endoftext|>
-        """
 
 
 class PriceTagDataset(Dataset):
@@ -94,7 +71,24 @@ class PriceTagDataset(Dataset):
                                 # "image": image.convert("L"),
                                 "qa": [
                                     {
-                                        "question": PROMPT,
+                                        "question": """
+                                        Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
+
+                                        1. Identify the product name, typically a recognizable item name found in the image.
+                                        2. Determine the unit of measurement, which could be "kg", "L", or "st". If "kg" or "L" occur with "st", prefer to read "kg" or "L" rather than "st".
+                                        3. Detect the price, associated with the identified unit (kg, L, or st). If "kg" or "L" are present in the image, use the price closest to these units. If neither "kg" nor "L" are present, then search for "st" and its respective price.
+
+                                        Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". 
+                                        The output should only be one combination of the most likely product name, price, and unit. Example format:
+
+                                        ```json
+                                        {
+                                            "name": "Ryggfilé Alaska Pollock",
+                                            "avg_price": "133",
+                                            "unit": "kg"
+                                        }
+                                        <|endoftext|>
+                                        """,
                                         "answer": json_data,
                                     }
                                 ],
@@ -115,14 +109,14 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-# weights_path = "./checkpoints/pretrained_weights_05_20"
-# tokenizer_path = "./checkpoints/pretrained_weights_05_20"
+weights_path = "./checkpoints/pretrained_weights_05_20"
+tokenizer_path = "./checkpoints/pretrained_weights_05_20"
 
 # weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 
-weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
-tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+# weights_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
+# tokenizer_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
 
 # weights_path = "checkpoints/lfs_raw"
 # tokenizer_path = "checkpoints/lfs_raw"
@@ -143,10 +137,6 @@ moondream = Moondream.from_pretrained(
     torch_dtype=DTYPE,
     device_map={"": DEVICE},
 )
-
-for param in moondream.parameters():
-    if not param.requires_grad:
-        print(f"Parameter {param} does not require grad")
 
 
 def collate_fn(batch):
@@ -195,8 +185,6 @@ def collate_fn(batch):
         tokens_acc[i].extend([tokenizer.eos_token_id] * pad_i)
         attn_mask_acc.append([1] * len_i + [0] * pad_i)
 
-    print("padding_i: ", pad_i)
-
     return (
         images,
         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
@@ -206,16 +194,74 @@ def collate_fn(batch):
     )
 
 
+# def collate_fn(batch):
+#     images = [sample["image"] for sample in batch]
+#     # images = torch.stack(moondream.vision_encoder.preprocess(images))
+#     # images = rearrange(images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14)
+#     preprocessed_images = moondream.vision_encoder.preprocess_images(images)
+#     images = [moondream.vision_encoder.preprocess(image) for image in images]
+#     preprocessed_images = rearrange(
+#         preprocessed_images, "b c (h p1) (w p2) -> b (h w) (c p1 p2)", p1=14, p2=14
+#     )
+
+#     labels_acc = []
+#     tokens_acc = []
+#     ground_truth_answers = []
+
+#     for sample in batch:
+#         toks = [tokenizer.bos_token_id]
+#         labs = [-100] * (IMG_TOKENS + 1)
+
+#         for qa in sample["qa"]:
+#             q_t = tokenizer(
+#                 f"\n\nQuestion: {qa['question']}\n\nAnswer:", add_special_tokens=False
+#             ).input_ids
+#             toks.extend(q_t)
+#             labs.extend([-100] * len(q_t))
+
+#             a_t = tokenizer(
+#                 f" {qa['answer']}{ANSWER_EOS}", add_special_tokens=False
+#             ).input_ids
+#             toks.extend(a_t)
+#             labs.extend(a_t)
+
+#             ground_truth_answers.append(
+#                 qa["answer"]
+#             )  # Collect unencoded ground truth answers
+
+#         tokens_acc.append(toks)
+#         labels_acc.append(labs)
+
+#     max_len = -1
+#     for labels in labels_acc:
+#         max_len = max(max_len, len(labels))
+
+#     attn_mask_acc = []
+
+#     for i in range(len(batch)):
+#         len_i = len(labels_acc[i])
+#         pad_i = max_len - len_i
+
+#         labels_acc[i].extend([-100] * pad_i)
+#         tokens_acc[i].extend([tokenizer.eos_token_id] * pad_i)
+#         attn_mask_acc.append([1] * len_i + [0] * pad_i)
+
+#     return (
+#         preprocessed_images.to(dtype=DTYPE),
+#         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
+#         torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
+#         torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
+#         ground_truth_answers,  # Return unencoded ground truth answers
+#     )
+
+
 def convert_to_numeric(decoded_answers, ground_truth_answers):
     numeric_data = []
 
     for i, decoded_answer in enumerate(decoded_answers):
         try:
-            print("type?", type(decoded_answer), type(ground_truth_answers[i]))
-            print("outcome?", decoded_answer, "ground_truth?", ground_truth_answers[i])
-
             response = json.loads(decoded_answer)
-            ground_truth = ground_truth_answers[i]
+            ground_truth = json.loads(ground_truth_answers[i])
 
             response_price = float(response["avg_price"].replace(".", ""))
             ground_truth_price = float(ground_truth["avg_price"].replace(".", ""))
@@ -242,130 +288,122 @@ def convert_to_numeric(decoded_answers, ground_truth_answers):
     return numeric_data
 
 
-def custom_loss(numeric_tensor):
+def custom_loss(decoded_answers, ground_truth_answers):
     reg_loss = 0
 
-    for entry in numeric_tensor:
-        (
-            response_price,
-            ground_truth_price,
-            response_unit,
-            ground_truth_unit,
-            response_name,
-            ground_truth_name,
-        ) = entry
+    for i, decoded_answer in enumerate(decoded_answers):
+        try:
+            response = json.loads(decoded_answer)
+        except json.JSONDecodeError:
+            reg_loss += 10  # Penalty for invalid JSON format
+            continue
 
-        # Calculate penalties
-        if response_unit != ground_truth_unit:
-            reg_loss += 10
+        # Parse ground truth answer
+        try:
+            ground_truth = json.loads(ground_truth_answers[i])
+        except json.JSONDecodeError:
+            continue
 
-        response_price_str = str(int(response_price))
-        ground_truth_price_str = str(int(ground_truth_price))
+        # Check format
+        if not all(key in response for key in ["name", "avg_price", "unit"]):
+            reg_loss += 10  # Penalty for missing keys
+            continue
 
-        # Compare lengths
-        if len(response_price_str) != len(ground_truth_price_str):
-            reg_loss += 5
-            if len(response_price_str) < len(ground_truth_price_str):
-                response_price_str = response_price_str.zfill(
-                    len(ground_truth_price_str)
-                )
+        # Check unit
+        ground_truth_unit = ground_truth["unit"]
+        if response["unit"] != ground_truth_unit:
+            reg_loss += 10  # Large penalty for incorrect unit
+            continue
+
+        # Check avg_price
+        try:
+            # Remove decimal points and concatenate the parts for comparison
+            ground_truth_price_str = ground_truth["avg_price"].replace(".", "")
+            response_price_str = response["avg_price"].replace(".", "")
+
+            # Compare lengths
+            if len(response_price_str) != len(ground_truth_price_str):
+                reg_loss += 5  # Penalty for length mismatch
+                # Adjust lengths for comparison
+                if len(response_price_str) < len(ground_truth_price_str):
+                    response_price_str = response_price_str.zfill(
+                        len(ground_truth_price_str)
+                    )
+                else:
+                    ground_truth_price_str = ground_truth_price_str.zfill(
+                        len(response_price_str)
+                    )
+
+            # Compare digit by digit
+            for gt_digit, res_digit in zip(ground_truth_price_str, response_price_str):
+                if gt_digit != res_digit:
+                    reg_loss += 3  # Penalty for each incorrect digit
+
+            # Compare the decimal points
+            ground_truth_parts = ground_truth["avg_price"].split(".")
+            response_parts = response["avg_price"].split(".")
+
+            # Check if both parts have decimal points
+            if len(ground_truth_parts) == 2 and len(response_parts) == 2:
+                if len(ground_truth_parts[1]) != len(response_parts[1]):
+                    reg_loss += 3  # Penalty for different decimal part lengths
             else:
-                ground_truth_price_str = ground_truth_price_str.zfill(
-                    len(response_price_str)
-                )
+                reg_loss += 3  # Penalty if one of them is missing the decimal part
+        except ValueError:
+            reg_loss += 5  # Penalty for invalid avg_price format
 
-        # Compare digit by digit
-        for gt_digit, res_digit in zip(ground_truth_price_str, response_price_str):
-            if gt_digit != res_digit:
-                reg_loss += 3
+        # Optionally check the name (not requested but can be added)
+        if response["name"] != ground_truth["name"]:
+            reg_loss += 1  # Small penalty for incorrect name
 
-        # Compare the decimal points
-        response_decimal_length = (
-            len(str(response_price).split(".")[1]) if "." in str(response_price) else 0
-        )
-        ground_truth_decimal_length = (
-            len(str(ground_truth_price).split(".")[1])
-            if "." in str(ground_truth_price)
-            else 0
-        )
-        if response_decimal_length != ground_truth_decimal_length:
-            reg_loss += 3
-
-        # # Optionally check the name (not requested but can be added)
-        # if response_name != ground_truth_name:
-        #     reg_loss += 1
-
-        print(
-            "checkpoint",
-            response_price,
-            ground_truth_price,
-            response_unit,
-            ground_truth_unit,
-            response_name,
-            ground_truth_name,
-        )
-
-    return torch.tensor(reg_loss / 10, dtype=torch.float32, requires_grad=True).to(
-        DEVICE
-    )
+    return reg_loss / 10
 
 
-def decode_answer(
-    inputs_embeds,
-    tokenizer,
-    result_queue=None,
-    **kwargs,
-):
+# def compute_loss(batch):
+#     images, tokens, labels, attn_mask = batch
 
-    generate_config = {
-        "eos_token_id": tokenizer.eos_token_id,
-        "bos_token_id": tokenizer.bos_token_id,
-        "pad_token_id": tokenizer.bos_token_id,
-        "max_new_tokens": MAX_NEW_TOKENS,
-        **kwargs,
-    }
+#     images = images.to(DEVICE)
+#     tokens = tokens.to(DEVICE)
+#     labels = labels.to(DEVICE)
+#     attn_mask = attn_mask.to(DEVICE)
 
-    print("inputs_embeds shape", inputs_embeds.unsqueeze(0).shape)
+#     with torch.no_grad():
+#         img_embs = moondream.vision_encoder.encoder(images)
+#         img_embs = moondream.vision_encoder.projection(img_embs)
 
-    print("inputs_ids", inputs_embeds)
-    output_ids = moondream.text_model.generate(
-        inputs_embeds=inputs_embeds.unsqueeze(0), **generate_config
-    )
+#     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
+#     inputs_embeds = torch.cat(
+#         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+#     )
 
-    print("output_ids", output_ids)
-    print("output_ids shape", output_ids.shape)
+#     outputs = moondream.text_model(
+#         inputs_embeds=inputs_embeds,
+#         labels=labels,
+#         attention_mask=attn_mask,
+#     )
 
-    answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-    cleaned_answer = answer.strip()
-
-    print("cleaned_answer", cleaned_answer)
-
-    # Use the result_queue to pass the result if it is provided
-    if result_queue:
-        result_queue.put(cleaned_answer)
-    else:
-        return cleaned_answer
+#     return outputs.loss
 
 
 def compute_loss(batch):
-
     images, tokens, labels, attn_mask, ground_truth_answers = batch
 
     tokens = tokens.to(DEVICE)
     labels = labels.to(DEVICE)
     attn_mask = attn_mask.to(DEVICE)
 
+    print("ground_truth_answers:", ground_truth_answers)
+    ground_truth_answers = ground_truth_answers.to(DEVICE)
+
     with torch.no_grad():
         img_embs = moondream.vision_encoder(images)
-
-    print("img_embs shape", img_embs.shape)
+        # img_embs = moondream.vision_encoder.encoder(images)
+        # img_embs = moondream.vision_encoder.projection(img_embs)
 
     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
     inputs_embeds = torch.cat(
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
-
-    print("inputs_embeds shape", inputs_embeds.shape)
 
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,
@@ -373,25 +411,20 @@ def compute_loss(batch):
         attention_mask=attn_mask,
     )
 
-    if MODE == "reg":
+    generated_ids = moondream.text_model.generate(
+        inputs_embeds=inputs_embeds,
+        max_new_tokens=32,
+        attention_mask=attn_mask,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+    decoded_answers = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
-        decoded_answers = []
-        for _, input_embeds in enumerate(inputs_embeds):
-            print("input_embeds shape", input_embeds.shape)
-            decoded_answers.append(
-                decode_answer(
-                    input_embeds,
-                    tokenizer,
-                    attn_mask,
-                )
-            )
+    numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
+    numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
 
-        numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
-        numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
-        reg_loss = custom_loss(numeric_tensor)
-    else:
-        reg_loss = torch.tensor(0, dtype=torch.float32, requires_grad=True).to(DEVICE)
+    reg_loss = custom_loss(decoded_answers, ground_truth_answers, reg_loss)
 
+    # return outputs.loss + reg_loss * torch.norm(outputs.loss)
     return outputs.loss, reg_loss
 
 
@@ -469,10 +502,6 @@ def train():
             epoch_reg_loss += reg_loss.item()
             epoch_steps += 1
 
-            # print(
-            #     f"Epoch {epoch + 1}/{EPOCHS}, CE Loss: {epoch_ce_loss}, Reg Loss: {epoch_reg_loss}"
-            # )
-
             if i % GRAD_ACCUM_STEPS == 0:
                 optimizer.step()
                 optimizer.zero_grad()
@@ -519,9 +548,6 @@ def image_to_bytes(image):
     return img_byte_arr
 
 
-import random
-
-
 def test():
     test_images = set()
     for i, test_data in enumerate(datasets["val"]):
@@ -535,7 +561,24 @@ def test():
 
         response = moondream.answer_question(
             enc_image,
-            PROMPT + random.randint(1, 10) * str(1),
+            """
+            Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
+
+            1. Identify the product name, typically a recognizable item name found in the image.
+            2. Determine the unit of measurement, which could be "kg", "L", or "st". If "kg" or "L" occur with "st", prefer to read "kg" or "L" rather than "st".
+            3. Detect the price, associated with the identified unit (kg, L, or st). If "kg" or "L" are present in the image, use the price closest to these units. If neither "kg" nor "L" are present, then search for "st" and its respective price.
+
+            Respond exclusively in the JSON format below, with no additional text or explanations. Include your response within `{ }`, then conclude your response with "<|endoftext|>". 
+            The output should only be one combination of the most likely product name, price, and unit. Example format:
+
+            ```json
+            {
+                "name": "Ryggfilé Alaska Pollock",
+                "avg_price": "133",
+                "unit": "kg"
+            }
+            <|endoftext|>
+            """,
             tokenizer,
         )
 

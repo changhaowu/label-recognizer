@@ -84,6 +84,8 @@ class Moondream(PreTrainedModel):
 
         with torch.no_grad():
             inputs_embeds = self.input_embeds(prompt, image_embeds, tokenizer)
+            print("input_embeds shape", inputs_embeds.shape)
+
             output_ids = self.text_model.generate(
                 inputs_embeds=inputs_embeds, **generate_config
             )
@@ -99,6 +101,7 @@ class Moondream(PreTrainedModel):
         result_queue=None,
         **kwargs,
     ):
+        # print("image_embeds shape", image_embeds.shape)
         prompt = f"<image>\n\n{chat_history}Question: {question}\n\nAnswer:"
         answer = self.generate(
             image_embeds,

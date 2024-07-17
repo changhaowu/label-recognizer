@@ -868,22 +868,16 @@ class PhiModel(PhiPreTrainedModel):
         # print("Stack trace for the call:")
         # traceback.print_stack()
 
-        # Ensure attention_mask matches the inputs_embeds size
-        if inputs_embeds is not None:
-            batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
-            if attention_mask is not None:
-                if attention_mask.size(1) != seq_length:
-                    # print(
-                    #     f"Adjusting attention_mask from size {attention_mask.size(1)} to {seq_length}"
-                    # )
-                    attention_mask = attention_mask[:, :seq_length]
+        # # Ensure attention_mask matches the inputs_embeds size
+        # if inputs_embeds is not None:
+        #     batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
+        #     if attention_mask is not None:
+        #         if attention_mask.size(1) != seq_length:
+        #             attention_mask = attention_mask[:, :seq_length]
 
-                if position_ids is not None:
-                    if position_ids.size(1) != seq_length:
-                        # print(
-                        #     f"Adjusting position_ids from size {position_ids.size(1)} to {seq_length}"
-                        # )
-                        position_ids = position_ids[:, :seq_length]
+        #         if position_ids is not None:
+        #             if position_ids.size(1) != seq_length:
+        #                 position_ids = position_ids[:, :seq_length]
 
         output_attentions = (
             output_attentions
