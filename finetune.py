@@ -313,6 +313,7 @@ def custom_loss(numeric_tensor):
 def decode_answer(
     inputs_embeds,
     tokenizer,
+    attn_mask,
     result_queue=None,
     **kwargs,
 ):
@@ -326,10 +327,13 @@ def decode_answer(
     }
 
     print("inputs_embeds shape", inputs_embeds.unsqueeze(0).shape)
-
     print("inputs_ids", inputs_embeds)
+    print("attn_mask shape", attn_mask.shape)
+
     output_ids = moondream.text_model.generate(
-        inputs_embeds=inputs_embeds.unsqueeze(0), **generate_config
+        inputs_embeds=inputs_embeds.unsqueeze(0),
+        attention_mask=attn_mask,
+        **generate_config,
     )
 
     print("output_ids", output_ids)
@@ -358,7 +362,7 @@ def compute_loss(batch):
     with torch.no_grad():
         img_embs = moondream.vision_encoder(images)
 
-    print("img_embs shape", img_embs.shape)
+    # print("img_embs shape", img_embs.shape)
 
     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
     inputs_embeds = torch.cat(
@@ -366,6 +370,7 @@ def compute_loss(batch):
     )
 
     print("inputs_embeds shape", inputs_embeds.shape)
+    print("attn_mask shape", attn_mask.shape)
 
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,
@@ -377,7 +382,7 @@ def compute_loss(batch):
 
         decoded_answers = []
         for _, input_embeds in enumerate(inputs_embeds):
-            print("input_embeds shape", input_embeds.shape)
+            # print("input_embeds shape", input_embeds.shape)
             decoded_answers.append(
                 decode_answer(
                     input_embeds,
@@ -535,7 +540,7 @@ def test():
 
         response = moondream.answer_question(
             enc_image,
-            PROMPT + random.randint(1, 10) * str(1),
+            PROMPT + +random.randint(1, 100) * str(1),
             tokenizer,
         )
 
