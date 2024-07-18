@@ -326,9 +326,11 @@ def decode_answer(
         **kwargs,
     }
 
-    print("inputs_embeds shape", inputs_embeds.unsqueeze(0).shape)
-    print("inputs_ids", inputs_embeds)
-    print("attn_mask shape", attn_mask.shape)
+    # print("inputs_embeds shape", inputs_embeds.unsqueeze(0).shape)
+    # print("inputs_ids", inputs_embeds)
+    # print("attn_mask shape", attn_mask.shape)
+
+    moondream.text_model.transformer.gradient_checkpointing_enable()
 
     output_ids = moondream.text_model.generate(
         inputs_embeds=inputs_embeds.unsqueeze(0),
@@ -336,13 +338,13 @@ def decode_answer(
         **generate_config,
     )
 
-    print("output_ids", output_ids)
-    print("output_ids shape", output_ids.shape)
+    # print("output_ids", output_ids)
+    # print("output_ids shape", output_ids.shape)
 
     answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
     cleaned_answer = answer.strip()
 
-    print("cleaned_answer", cleaned_answer)
+    # print("cleaned_answer", cleaned_answer)
 
     # Use the result_queue to pass the result if it is provided
     if result_queue:
@@ -354,6 +356,8 @@ def decode_answer(
 def compute_loss(batch):
 
     images, tokens, labels, attn_mask, ground_truth_answers = batch
+
+    moondream.text_model.transformer.gradient_checkpointing_enable()
 
     tokens = tokens.to(DEVICE)
     labels = labels.to(DEVICE)
@@ -372,11 +376,11 @@ def compute_loss(batch):
     print("inputs_embeds shape", inputs_embeds.shape)
     print("attn_mask shape", attn_mask.shape)
 
-    outputs = moondream.text_model(
-        inputs_embeds=inputs_embeds,
-        labels=labels,
-        attention_mask=attn_mask,
-    )
+    # outputs = moondream.text_model(
+    #     inputs_embeds=inputs_embeds,
+    #     labels=labels,
+    #     attention_mask=attn_mask,
+    # )
 
     if MODE == "reg":
 
@@ -540,13 +544,15 @@ def test():
 
         response = moondream.answer_question(
             enc_image,
-            PROMPT + +random.randint(1, 100) * str(1),
+            PROMPT,
             tokenizer,
         )
 
         print(f"Response for image {i}: {response}")
         for item in test_data["qa"]:
             print("Ground Truth: \n", json.dumps(item["answer"], indent=4))
+
+        break
 
 
 if __name__ == "__main__":

@@ -875,14 +875,14 @@ class PhiModel(PhiPreTrainedModel):
         # Ensure attention_mask matches the inputs_embeds size
         if inputs_embeds is not None:
             print("activated!")
-            batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
-            if attention_mask is not None:
-                if attention_mask.size(1) != seq_length:
-                    attention_mask = attention_mask[:, :seq_length]
+            # batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
+            # if attention_mask is not None:
+            #     if attention_mask.size(1) != seq_length:
+            #         attention_mask = attention_mask[:, :seq_length]
 
-                if position_ids is not None:
-                    if position_ids.size(1) != seq_length:
-                        position_ids = position_ids[:, :seq_length]
+            #     if position_ids is not None:
+            #         if position_ids.size(1) != seq_length:
+            #             position_ids = position_ids[:, :seq_length]
 
         output_attentions = (
             output_attentions
@@ -952,8 +952,8 @@ class PhiModel(PhiPreTrainedModel):
             )
         else:
             # # 调试信息
-            # print(f"batch_size: {inputs_embeds.size(0)}")
-            # print(f"seq_length: {inputs_embeds.size(1)}")
+            print(f"batch_size: {inputs_embeds.size(0)}")
+            print(f"seq_length: {inputs_embeds.size(1)}")
             print(f"inputs_embeds shape: {inputs_embeds.shape}")
             print(f"past_key_values_length: {past_key_values_length}")
 
