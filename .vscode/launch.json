@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File (train)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/finetune.py",  // 使用相对路径
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["train"]  // 传递 "train" 参数
+        },
+        {
+            "name": "Python: Current File (test)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/finetune.py",  // 使用相对路径
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["test"]  // 传递 "test" 参数
+        }
+    ]
+}

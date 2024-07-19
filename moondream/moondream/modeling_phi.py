@@ -738,24 +738,6 @@ class PhiDecoderLayer(nn.Module):
 
         hidden_states = self.ln(hidden_states)
 
-        # # Debugging the shape of variables
-        # print("hidden_states shape:", hidden_states.shape)
-        # print("attention_mask shape:", attention_mask.shape)
-        # print("position_ids shape:", position_ids.shape)
-        # # 检查 position_ids 的形状
-        # if position_ids.size(0) == 1:
-        #     position_ids = position_ids.expand(hidden_states.size(0), -1)
-
-        # print("position_ids shape after adjustment:", position_ids.shape)
-
-        # if past_key_value is not None:
-        #     print("past_key_value shape:", past_key_value.shape)
-        # else:
-        #     print("past_key_value is None")
-
-        # print("output_attentions:", output_attentions)
-        # print("use_cache:", use_cache)
-
         # Self Attention
         attn_outputs, self_attn_weights, present_key_value = self.mixer(
             hidden_states=hidden_states,
@@ -839,8 +821,8 @@ class PhiModel(PhiPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-        # Add a counter to track forward calls
-        self.forward_call_count = 0
+        # # Add a counter to track forward calls
+        # self.forward_call_count = 0
 
     def get_input_embeddings(self):
         return self.embd.wte
@@ -861,28 +843,20 @@ class PhiModel(PhiPreTrainedModel):
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
 
-        # self.forward_call_count += 1
-        # print(f"Forward call count: {self.forward_call_count}")
-
-        print("use_cache:", use_cache)
-
         # # # Print the stack trace
         # print("Stack trace for the call:")
         # traceback.print_stack()
 
-        print("activated?")
+        # # Ensure attention_mask matches the inputs_embeds size
+        # if inputs_embeds is not None:
+        #     batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
+        #     if attention_mask is not None:
+        #         if attention_mask.size(1) != seq_length:
+        #             attention_mask = attention_mask[:, :seq_length]
 
-        # Ensure attention_mask matches the inputs_embeds size
-        if inputs_embeds is not None:
-            print("activated!")
-            batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
-            if attention_mask is not None:
-                if attention_mask.size(1) != seq_length:
-                    attention_mask = attention_mask[:, :seq_length]
-
-                if position_ids is not None:
-                    if position_ids.size(1) != seq_length:
-                        position_ids = position_ids[:, :seq_length]
+        #         if position_ids is not None:
+        #             if position_ids.size(1) != seq_length:
+        #                 position_ids = position_ids[:, :seq_length]
 
         output_attentions = (
             output_attentions
@@ -951,16 +925,6 @@ class PhiModel(PhiPreTrainedModel):
                 else None
             )
         else:
-            # # 调试信息
-            # print(f"batch_size: {inputs_embeds.size(0)}")
-            # print(f"seq_length: {inputs_embeds.size(1)}")
-            print(f"inputs_embeds shape: {inputs_embeds.shape}")
-            print(f"past_key_values_length: {past_key_values_length}")
-
-            print(
-                "attention_mask shape before preparing 4d mask:", attention_mask.shape
-            )
-            # print("attention_mask values before preparing 4d mask:", attention_mask)
 
             # 4d mask is passed through the layers
             attention_mask = _prepare_4d_causal_attention_mask(

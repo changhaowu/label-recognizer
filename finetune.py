@@ -195,8 +195,6 @@ def collate_fn(batch):
         tokens_acc[i].extend([tokenizer.eos_token_id] * pad_i)
         attn_mask_acc.append([1] * len_i + [0] * pad_i)
 
-    print("padding_i: ", pad_i)
-
     return (
         images,
         torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
@@ -330,7 +328,7 @@ def decode_answer(
     # print("inputs_ids", inputs_embeds)
     # print("attn_mask shape", attn_mask.shape)
 
-    moondream.text_model.transformer.gradient_checkpointing_enable()
+    moondream.text_model.transformer.gradient_checkpointing_disable()
 
     output_ids = moondream.text_model.generate(
         inputs_embeds=inputs_embeds.unsqueeze(0),
@@ -366,27 +364,21 @@ def compute_loss(batch):
     with torch.no_grad():
         img_embs = moondream.vision_encoder(images)
 
-    # print("img_embs shape", img_embs.shape)
-
     tok_embs = moondream.text_model.get_input_embeddings()(tokens)
     inputs_embeds = torch.cat(
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
 
-    print("inputs_embeds shape", inputs_embeds.shape)
-    print("attn_mask shape", attn_mask.shape)
-
-    # outputs = moondream.text_model(
-    #     inputs_embeds=inputs_embeds,
-    #     labels=labels,
-    #     attention_mask=attn_mask,
-    # )
+    outputs = moondream.text_model(
+        inputs_embeds=inputs_embeds,
+        labels=labels,
+        attention_mask=attn_mask,
+    )
 
     if MODE == "reg":
 
         decoded_answers = []
         for _, input_embeds in enumerate(inputs_embeds):
-            # print("input_embeds shape", input_embeds.shape)
             decoded_answers.append(
                 decode_answer(
                     input_embeds,
@@ -528,9 +520,6 @@ def image_to_bytes(image):
     return img_byte_arr
 
 
-import random
-
-
 def test():
     test_images = set()
     for i, test_data in enumerate(datasets["val"]):
@@ -556,8 +545,16 @@ def test():
 
 
 if __name__ == "__main__":
-    # call train or test according to the command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] == "train":
-        train()
-    elif len(sys.argv) > 1 and sys.argv[1] == "test":
-        test()
+    # # call train or test according to the command line arguments
+    # if len(sys.argv) > 1 and sys.argv[1] == "train":
+    #     train()
+    # elif len(sys.argv) > 1 and sys.argv[1] == "test":
+    #     test()
+    try:
+        # 根据命令行参数调用 train 或 test
+        if len(sys.argv) > 1 and sys.argv[1] == "train":
+            train()
+        elif len(sys.argv) > 1 and sys.argv[1] == "test":
+            test()
+    except KeyboardInterrupt:
+        print("Process interrupted by user")

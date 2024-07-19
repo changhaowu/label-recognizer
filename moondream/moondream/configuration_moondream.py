@@ -20,8 +20,8 @@ class PhiConfig(PretrainedConfig):
         max_position_embeddings=2048,
         initializer_range=0.02,
         layer_norm_eps=1e-5,
-        # use_cache=True,
-        use_cache=False,
+        use_cache=True,
+        # use_cache=False,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
@@ -29,6 +29,7 @@ class PhiConfig(PretrainedConfig):
         qk_layernorm=False,
         bos_token_id=1,
         eos_token_id=2,
+        _attn_implementation="flash_attention_2",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -53,6 +54,7 @@ class PhiConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         self.partial_rotary_factor = partial_rotary_factor
         self.qk_layernorm = qk_layernorm
+        # self._attn_implementation = _attn_implementation
         self._rope_scaling_validation()
 
         super().__init__(
