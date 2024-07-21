@@ -109,11 +109,8 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-weights_path = "./moondream/pretrained_weights_03_13"
-tokenizer_path = "./moondream/pretrained_weights_03_13"
-
-# weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
-# tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
+weights_path = "checkpoints/pretrained_weights_05_20"
+tokenizer_path = "checkpoints/pretrained_weights_05_20"
 
 # weights_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_3e-05_epoch_50"
