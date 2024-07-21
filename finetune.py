@@ -9,8 +9,11 @@ import torch
 from einops import rearrange
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from moondream.moondream import Moondream, detect_device, LATEST_REVISION
+from transformers_cfg.grammar_utils import IncrementalGrammarConstraint
+from transformers_cfg.generation.logits_process import GrammarConstrainedLogitsProcessor
 
 DEVICE = "cuda"
 CONTINUE = 1
@@ -323,11 +326,6 @@ def decode_answer(
         "max_new_tokens": MAX_NEW_TOKENS,
         **kwargs,
     }
-
-    # print("inputs_embeds shape", inputs_embeds.unsqueeze(0).shape)
-    # print("inputs_ids", inputs_embeds)
-    # print("attn_mask shape", attn_mask.shape)
-
     moondream.text_model.transformer.gradient_checkpointing_disable()
 
     output_ids = moondream.text_model.generate(
@@ -336,13 +334,10 @@ def decode_answer(
         **generate_config,
     )
 
-    # print("output_ids", output_ids)
-    # print("output_ids shape", output_ids.shape)
-
     answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
     cleaned_answer = answer.strip()
 
-    # print("cleaned_answer", cleaned_answer)
+    print("cleaned_answer", cleaned_answer)
 
     # Use the result_queue to pass the result if it is provided
     if result_queue:
@@ -377,21 +372,28 @@ def compute_loss(batch):
 
     if MODE == "reg":
 
-        decoded_answers = []
-        for _, input_embeds in enumerate(inputs_embeds):
-            decoded_answers.append(
-                decode_answer(
-                    input_embeds,
-                    tokenizer,
-                    attn_mask,
-                )
-            )
-
-        numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
-        numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
-        reg_loss = custom_loss(numeric_tensor)
-    else:
+        #     decoded_answers = []
+        #     for _, input_embeds in enumerate(inputs_embeds):
+        #         decoded_answers.append(
+        #             decode_answer(
+        #                 input_embeds,
+        #                 tokenizer,
+        #                 attn_mask,
+        #             )
+        #         )
+        #     numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
+        #     numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
+        #     reg_loss = custom_loss(numeric_tensor)
+        # else:
         reg_loss = torch.tensor(0, dtype=torch.float32, requires_grad=True).to(DEVICE)
+
+        # # Load json grammar
+        # with open("grammar/stock_label.ebnf", "r") as file:
+        #     grammar_str = file.read()
+        #     grammar = IncrementalGrammarConstraint(grammar_str, "root", tokenizer)
+        #     grammar_processor = GrammarConstrainedLogitsProcessor(grammar)
+
+        # reg_loss = torch.tensor(0, dtype=torch.float32, requires_grad=True).to(DEVICE)
 
     return outputs.loss, reg_loss
 

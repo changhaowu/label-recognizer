@@ -1,0 +1,17 @@
+# Grammar for subset of JSON
+# Supports specific structure with predefined keys and constrained values
+
+root   ::= object
+
+object ::= "{" ws fields "}" ws
+
+fields ::= '"name"' ws ":" ws string "," ws '"avg_price"' ws ":" ws number "," ws '"unit"' ws ":" ws unit
+
+string ::= '"' [a-zA-Z0-9_ ]* '"' ws
+
+number ::= '-'? [0-9]+ ('.' [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+
+unit ::= '"' ("kg" | "l" | "st") '"' ws
+
+ws ::= [ \t\n\r]*
+

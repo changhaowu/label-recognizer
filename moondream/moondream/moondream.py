@@ -6,6 +6,9 @@ from transformers import PreTrainedModel
 from .modeling_phi import PhiForCausalLM
 from .configuration_moondream import PhiConfig
 
+from transformers_cfg.grammar_utils import IncrementalGrammarConstraint
+from transformers_cfg.generation.logits_process import GrammarConstrainedLogitsProcessor
+
 
 class Moondream(PreTrainedModel):
     config_class = MoondreamConfig
@@ -82,12 +85,21 @@ class Moondream(PreTrainedModel):
             **kwargs,
         }
 
+        # # with open("grammar/stock_label.ebnf", "r") as file:
+        # with open("grammar/json.ebnf", "r") as file:
+        #     grammar_str = file.read()
+        #     grammar = IncrementalGrammarConstraint(grammar_str, "root", tokenizer)
+        #     grammar_processor = GrammarConstrainedLogitsProcessor(grammar)
+
         with torch.no_grad():
             inputs_embeds = self.input_embeds(prompt, image_embeds, tokenizer)
             print("input_embeds shape", inputs_embeds.shape)
 
             output_ids = self.text_model.generate(
-                inputs_embeds=inputs_embeds, **generate_config
+                inputs_embeds=inputs_embeds,
+                **generate_config,
+                # logits_processor=[grammar_processor],
+                # repetition_penalty=1.1,
             )
 
         return tokenizer.batch_decode(output_ids, skip_special_tokens=True)
