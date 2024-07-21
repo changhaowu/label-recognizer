@@ -952,14 +952,14 @@ class PhiModel(PhiPreTrainedModel):
             )
         else:
             # # 调试信息
-            print(f"batch_size: {inputs_embeds.size(0)}")
-            print(f"seq_length: {inputs_embeds.size(1)}")
-            print(f"inputs_embeds shape: {inputs_embeds.shape}")
-            print(f"past_key_values_length: {past_key_values_length}")
+            # print(f"batch_size: {inputs_embeds.size(0)}")
+            # print(f"seq_length: {inputs_embeds.size(1)}")
+            # print(f"inputs_embeds shape: {inputs_embeds.shape}")
+            # print(f"past_key_values_length: {past_key_values_length}")
 
-            print(
-                "attention_mask shape before preparing 4d mask:", attention_mask.shape
-            )
+            # print(
+            #     "attention_mask shape before preparing 4d mask:", attention_mask.shape
+            # )
             # print("attention_mask values before preparing 4d mask:", attention_mask)
 
             # 4d mask is passed through the layers

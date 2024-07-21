@@ -864,17 +864,17 @@ class PhiModel(PhiPreTrainedModel):
         # self.forward_call_count += 1
         # print(f"Forward call count: {self.forward_call_count}")
 
-        print("use_cache:", use_cache)
+        # print("use_cache:", use_cache)
 
         # # # Print the stack trace
         # print("Stack trace for the call:")
         # traceback.print_stack()
 
-        print("activated?")
+        # print("activated?")
 
         # Ensure attention_mask matches the inputs_embeds size
         if inputs_embeds is not None:
-            print("activated!")
+            # print("activated!")
             batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
             if attention_mask is not None:
                 if attention_mask.size(1) != seq_length:
@@ -954,12 +954,12 @@ class PhiModel(PhiPreTrainedModel):
             # # 调试信息
             # print(f"batch_size: {inputs_embeds.size(0)}")
             # print(f"seq_length: {inputs_embeds.size(1)}")
-            print(f"inputs_embeds shape: {inputs_embeds.shape}")
-            print(f"past_key_values_length: {past_key_values_length}")
+            # print(f"inputs_embeds shape: {inputs_embeds.shape}")
+            # print(f"past_key_values_length: {past_key_values_length}")
 
-            print(
-                "attention_mask shape before preparing 4d mask:", attention_mask.shape
-            )
+            # print(
+            #     "attention_mask shape before preparing 4d mask:", attention_mask.shape
+            # )
             # print("attention_mask values before preparing 4d mask:", attention_mask)
 
             # 4d mask is passed through the layers

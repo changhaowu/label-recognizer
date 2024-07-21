@@ -115,14 +115,14 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-# weights_path = "./checkpoints/pretrained_weights_05_20"
-# tokenizer_path = "./checkpoints/pretrained_weights_05_20"
+weights_path = "./checkpoints/pretrained_weights_05_20"
+tokenizer_path = "./checkpoints/pretrained_weights_05_20"
 
 # weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 
-weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
-tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+# weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+# tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
 
 # weights_path = "checkpoints/lfs_raw"
 # tokenizer_path = "checkpoints/lfs_raw"
@@ -195,7 +195,7 @@ def collate_fn(batch):
         tokens_acc[i].extend([tokenizer.eos_token_id] * pad_i)
         attn_mask_acc.append([1] * len_i + [0] * pad_i)
 
-    print("padding_i: ", pad_i)
+    # print("padding_i: ", pad_i) 
 
     return (
         images,
@@ -330,7 +330,7 @@ def decode_answer(
     # print("inputs_ids", inputs_embeds)
     # print("attn_mask shape", attn_mask.shape)
 
-    moondream.text_model.transformer.gradient_checkpointing_enable()
+    moondream.text_model.transformer.gradient_checkpointing_disable()
 
     output_ids = moondream.text_model.generate(
         inputs_embeds=inputs_embeds.unsqueeze(0),
@@ -344,7 +344,7 @@ def decode_answer(
     answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
     cleaned_answer = answer.strip()
 
-    # print("cleaned_answer", cleaned_answer)
+    print("cleaned_answer", cleaned_answer)
 
     # Use the result_queue to pass the result if it is provided
     if result_queue:
@@ -373,14 +373,14 @@ def compute_loss(batch):
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
 
-    print("inputs_embeds shape", inputs_embeds.shape)
-    print("attn_mask shape", attn_mask.shape)
+    # print("inputs_embeds shape", inputs_embeds.shape)
+    # print("attn_mask shape", attn_mask.shape)
 
-    # outputs = moondream.text_model(
-    #     inputs_embeds=inputs_embeds,
-    #     labels=labels,
-    #     attention_mask=attn_mask,
-    # )
+    outputs = moondream.text_model(
+        inputs_embeds=inputs_embeds,
+        labels=labels,
+        attention_mask=attn_mask,
+    )
 
     if MODE == "reg":
 
@@ -394,10 +394,11 @@ def compute_loss(batch):
                     attn_mask,
                 )
             )
-
-        numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
-        numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
-        reg_loss = custom_loss(numeric_tensor)
+        
+        reg_loss = torch.tensor(0, dtype=torch.float32, requires_grad=True).to(DEVICE)
+        # numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
+        # numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
+        # reg_loss = custom_loss(numeric_tensor)
     else:
         reg_loss = torch.tensor(0, dtype=torch.float32, requires_grad=True).to(DEVICE)
 
@@ -552,7 +553,7 @@ def test():
         for item in test_data["qa"]:
             print("Ground Truth: \n", json.dumps(item["answer"], indent=4))
 
-        break
+        # break
 
 
 if __name__ == "__main__":

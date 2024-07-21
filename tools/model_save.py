@@ -7,7 +7,8 @@ revision = "2024-05-20"
 local_model_path = (
     # "/home/karl/Documents/Github/label-recognizer/moondream/pretrained_weights"
     # "/home/karl/Documents/Github/label-recognizer/checkpoints/pretrained_weights_03_13"
-    "/home/karl/Documents/Github/label-recognizer/checkpoints/pretrained_weights_05_20"
+    # "/home/karl/Documents/Github/label-recognizer/checkpoints/pretrained_weights_05_20"
+    "/home/wch/Documents/Github/label-recognizer/checkpoints/pretrained_weights_05_20"
     # "/home/wch/Documents/Github/label-recognizer/checkpoints/moondream2"
 )
 
