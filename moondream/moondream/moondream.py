@@ -84,7 +84,7 @@ class Moondream(PreTrainedModel):
 
         with torch.no_grad():
             inputs_embeds = self.input_embeds(prompt, image_embeds, tokenizer)
-            print("input_embeds shape", inputs_embeds.shape)
+            # print("input_embeds shape", inputs_embeds.shape)
 
             output_ids = self.text_model.generate(
                 inputs_embeds=inputs_embeds, **generate_config
