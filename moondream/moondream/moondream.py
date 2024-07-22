@@ -36,11 +36,16 @@ class Moondream(PreTrainedModel):
         with torch.no_grad():
             return self.vision_encoder(image)
 
-    def input_embeds(self, prompt, image_embeds, tokenizer):
+    def input_embeds(self, prompt, image_embeds, tokenizer, decode=None):
         def _tokenize(txt):
-            return tokenizer(
-                txt, return_tensors="pt", add_special_tokens=False
-            ).input_ids.to(self.device)
+            if decode == "cfg":
+                return tokenizer(
+                    txt, return_tensors="pt", add_special_tokens=False, padding=True
+                ).input_ids.to(self.device)
+            else:
+                return tokenizer(
+                    txt, return_tensors="pt", add_special_tokens=False
+                ).input_ids.to(self.device)
 
         text_emb = self.text_model.get_input_embeddings()
 

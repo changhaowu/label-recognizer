@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from moondream.moondream import Moondream, detect_device, LATEST_REVISION
+from transformers_cfg.grammar_utils import IncrementalGrammarConstraint
+from transformers_cfg.generation.logits_process import GrammarConstrainedLogitsProcessor
 
 DEVICE = "cuda"
 CONTINUE = 1
@@ -44,8 +46,11 @@ ANSWER_EOS = "<|endoftext|>"
 IMG_TOKENS = 729
 
 MAX_NEW_TOKENS = 128
-MODE = "TRAIN"
+# MODE = "TRAIN"
 # MODE = "reg"
+
+DECODE = "cfg"
+
 
 PROMPT = """
         Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
@@ -128,7 +133,6 @@ tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
 # weights_path = "checkpoints/lfs_raw"
 # tokenizer_path = "checkpoints/lfs_raw"
 
-
 tokenizer = AutoTokenizer.from_pretrained(
     # "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
     pretrained_model_name_or_path=tokenizer_path,
@@ -148,6 +152,12 @@ moondream = Moondream.from_pretrained(
 for param in moondream.parameters():
     if not param.requires_grad:
         print(f"Parameter {param} does not require grad")
+
+# Load grammar
+with open("grammars/label.ebnf", "r") as file:
+    grammar_str = file.read()
+grammar = IncrementalGrammarConstraint(grammar_str, "root", tokenizer)
+grammar_processor = GrammarConstrainedLogitsProcessor(grammar)
 
 
 def collate_fn(batch):
@@ -212,8 +222,8 @@ def convert_to_numeric(decoded_answers, ground_truth_answers):
 
     for i, decoded_answer in enumerate(decoded_answers):
         try:
-            print("type?", type(decoded_answer), type(ground_truth_answers[i]))
-            print("outcome?", decoded_answer, "ground_truth?", ground_truth_answers[i])
+            # print("type?", type(decoded_answer), type(ground_truth_answers[i]))
+            # print("outcome?", decoded_answer, "ground_truth?", ground_truth_answers[i])
 
             response = json.loads(decoded_answer)
             ground_truth = ground_truth_answers[i]
@@ -314,15 +324,29 @@ def custom_loss(numeric_tensor):
 def decode_answer(
     inputs_embeds,
     tokenizer,
-    attn_mask,
+    attn_mask=None,
     result_queue=None,
     **kwargs,
 ):
+    """
+    Decodes the answer using the provided inputs and tokenizer.
 
+    Args:
+        inputs_embeds (torch.Tensor): The embedded inputs for the model.
+        tokenizer (transformers.PreTrainedTokenizer): The tokenizer used for decoding.
+        attn_mask (torch.Tensor): The attention mask for the inputs.
+        result_queue (multiprocessing.Queue, optional): A queue to pass the result if provided.
+        **kwargs: Additional keyword arguments for generating the output.
+
+    Returns:
+        str: The decoded answer.
+
+    """
     generate_config = {
         "eos_token_id": tokenizer.eos_token_id,
         "bos_token_id": tokenizer.bos_token_id,
-        "pad_token_id": tokenizer.bos_token_id,
+        # "pad_token_id": tokenizer.bos_token_id,
+        "pad_token_id": tokenizer.eos_token_id,
         "max_new_tokens": MAX_NEW_TOKENS,
         **kwargs,
     }
@@ -336,6 +360,7 @@ def decode_answer(
     output_ids = moondream.text_model.generate(
         inputs_embeds=inputs_embeds.unsqueeze(0),
         attention_mask=attn_mask,
+        # logits_processor=[grammar_processor],
         **generate_config,
     )
 
@@ -345,7 +370,7 @@ def decode_answer(
     answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
     cleaned_answer = answer.strip()
 
-    print("cleaned_answer", cleaned_answer)
+    # print("cleaned_answer", cleaned_answer)
     # Use the result_queue to pass the result if it is provided
     if result_queue:
         result_queue.put(cleaned_answer)
@@ -529,9 +554,6 @@ def image_to_bytes(image):
     return img_byte_arr
 
 
-import random
-
-
 def test():
     test_images = set()
     for i, test_data in enumerate(datasets["val"]):
@@ -540,20 +562,36 @@ def test():
             print(f"Duplicate found at index {i}")
             continue
         test_images.add(img_bytes)
+        # attn_mask = test_data["attn_mask"]
 
-        enc_image = moondream.encode_image(test_data["image"])
+        image_embeds = moondream.encode_image(test_data["image"])
+        prompt = f"<image>\n\nQuestion: {PROMPT}\n\nAnswer:"
 
-        response = moondream.answer_question(
-            enc_image,
-            PROMPT,
-            tokenizer,
-        )
+        if DECODE == "cfg":
+            tokenizer.pad_token = tokenizer.eos_token
+            moondream.generation_config.pad_token_id = (
+                moondream.generation_config.eos_token_id
+            )
 
-        print(f"Response for image {i}: {response}")
-        for item in test_data["qa"]:
-            print("Ground Truth: \n", json.dumps(item["answer"], indent=4))
+            inputs_embeds = moondream.input_embeds(
+                prompt, image_embeds, tokenizer, decode=DECODE
+            )
+            inputs_embeds = inputs_embeds.squeeze(0)
 
-        # break
+            response = decode_answer(inputs_embeds, tokenizer)
+
+            print(f"Response for image {i}: {response}")
+            for item in test_data["qa"]:
+                print("Ground Truth: \n", json.dumps(item["answer"], indent=4))
+        else:
+            inputs_embeds = moondream.input_embeds(prompt, image_embeds, tokenizer)
+            inputs_embeds = inputs_embeds.squeeze(0)
+
+            response = decode_answer(inputs_embeds, tokenizer)
+
+            print(f"Response for image {i}: {response}")
+            for item in test_data["qa"]:
+                print("Ground Truth: \n", json.dumps(item["answer"], indent=4))
 
 
 if __name__ == "__main__":
