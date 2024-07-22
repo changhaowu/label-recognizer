@@ -16,8 +16,9 @@ DEVICE = "cuda"
 CONTINUE = 1
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
 # DTYPE = torch.float32
-MD_REVISION = "2024-04-02"
-EPOCHS = 1
+# MD_REVISION = "2024-04-02"
+MD_REVISION = "2024-05-20"
+EPOCHS = 10
 # Number of samples to process in each batch. Set this to the highest value that doesn't cause an
 # out-of-memory error. Decrease it if you're running out of memory. Batch size 8 currently uses around
 # 15 GB of GPU memory during fine-tuning.
@@ -43,8 +44,8 @@ ANSWER_EOS = "<|endoftext|>"
 IMG_TOKENS = 729
 
 MAX_NEW_TOKENS = 128
-# MODE = "TRAIN"
-MODE = "reg"
+MODE = "TRAIN"
+# MODE = "reg"
 
 PROMPT = """
         Analyze the text in the provided image and extract the product name, price, and unit. Ensure the product name is accurately read from the image and not assumed. Follow these instructions precisely:
@@ -115,14 +116,14 @@ datasets = {
     "test": PriceTagDataset(split="test"),
 }
 
-weights_path = "./checkpoints/pretrained_weights_05_20"
-tokenizer_path = "./checkpoints/pretrained_weights_05_20"
+# weights_path = "./checkpoints/pretrained_weights_05_20"
+# tokenizer_path = "./checkpoints/pretrained_weights_05_20"
 
 # weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 # tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
 
-# weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
-# tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
 
 # weights_path = "checkpoints/lfs_raw"
 # tokenizer_path = "checkpoints/lfs_raw"
@@ -137,7 +138,7 @@ tokenizer = AutoTokenizer.from_pretrained(
 moondream = Moondream.from_pretrained(
     # "./checkpoints/moondream-ft" if CONTINUE else "vikhyatk/moondream2",
     pretrained_model_name_or_path=weights_path if CONTINUE else "vikhyatk/moondream2",
-    revision=MD_REVISION,
+    # revision=MD_REVISION,
     trust_remote_code=True,
     attn_implementation="flash_attention_2" if DEVICE == "cuda" else None,
     torch_dtype=DTYPE,
@@ -195,7 +196,7 @@ def collate_fn(batch):
         tokens_acc[i].extend([tokenizer.eos_token_id] * pad_i)
         attn_mask_acc.append([1] * len_i + [0] * pad_i)
 
-    # print("padding_i: ", pad_i) 
+    # print("padding_i: ", pad_i)
 
     return (
         images,
@@ -345,7 +346,6 @@ def decode_answer(
     cleaned_answer = answer.strip()
 
     print("cleaned_answer", cleaned_answer)
-
     # Use the result_queue to pass the result if it is provided
     if result_queue:
         result_queue.put(cleaned_answer)
@@ -394,7 +394,7 @@ def compute_loss(batch):
                     attn_mask,
                 )
             )
-        
+
         reg_loss = torch.tensor(0, dtype=torch.float32, requires_grad=True).to(DEVICE)
         # numeric_data = convert_to_numeric(decoded_answers, ground_truth_answers)
         # numeric_tensor = torch.tensor(numeric_data, dtype=torch.float32).to(DEVICE)
