@@ -44,7 +44,7 @@ def main():
         "--nsamples", type=int, default=128, help="Number of calibration samples."
     )
     parser.add_argument(
-        "--sparsity_ratio", type=float, default=0, help="Sparsity level"
+        "--sparsity_ratio", type=float, default=0.5, help="Sparsity level"
     )
     parser.add_argument(
         "--sparsity_type", type=str, choices=["unstructured", "4:8", "2:4"]
@@ -63,7 +63,9 @@ def main():
             "search",
         ],
     )
-    parser.add_argument("--cache_dir", default="llm_weights", type=str)
+    parser.add_argument(
+        "--cache_dir", default="checkpoints/moondream-ft_lr_3e-06_epoch_10", type=str
+    )
     parser.add_argument(
         "--use_variant",
         action="store_true",
@@ -71,7 +73,10 @@ def main():
     )
     parser.add_argument("--save", type=str, default=None, help="Path to save results.")
     parser.add_argument(
-        "--save_model", type=str, default=None, help="Path to save the pruned model."
+        "--save_model",
+        type=str,
+        default="checkpoints/moondream-ft_lr_3e-06_epoch_10_pruned",
+        help="Path to save the pruned model.",
     )
 
     parser.add_argument("--eval_zero_shot", action="store_true")
