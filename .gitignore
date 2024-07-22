@@ -18,3 +18,15 @@ checkpoints
 
 moondream/pretrained_weights_03_13
 moondream/pretrained_weights_05_20
+
+data/data_test
+data/data_train
+data/data_validation
+
+data_test/
+data_train/
+data_validation/
+
+./data_test/
+./data_train/
+./data_validation/

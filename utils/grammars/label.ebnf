@@ -1,0 +1,18 @@
+# Grammar for subset of JSON
+# String doesn't support unicode and escape yet
+# If you don't need to generate unicode and escape, you can use this grammar
+# We are working to support unicode and escape
+
+root   ::= object
+
+object ::= "{" ws nameField "," ws priceField "," unitField "}"
+
+nameField ::= "\"" "name" "\"" ws ":" ws string ws
+priceField ::= "\"" "avg_price" "\"" ws ":" ws number ws
+unitField ::= "\"" "unit" "\"" ws ":" ws "\"" unit "\"" ws
+
+string ::= "\"" [a-zA-Z0-9À-ÿ :,&]* "\"" ws
+number ::= [0-9]* [.]? [0-9]? [0-9]? ws
+unit ::= "kg" | "l" | "st"
+
+ws ::= ([ \t\n] ws)?

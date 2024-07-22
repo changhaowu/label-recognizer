@@ -1,0 +1,119 @@
+import json
+import io
+import torch
+from transformers_cfg.grammar_utils import IncrementalGrammarConstraint
+from transformers_cfg.generation.logits_process import (
+    GrammarConstrainedLogitsProcessor,
+)
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import sys
+
+import os
+from PIL import Image
+import numpy as np
+from collections import Counter
+import matplotlib.pyplot as plt
+from moondream.moondream import Moondream
+
+
+def model_save():
+    DEVICE = "cuda"
+    DTYPE = (
+        torch.float32 if DEVICE == "cpu" else torch.float16
+    )  # CPU doesn't support float16
+
+    local_model_path = "/path/to/local/directory"
+
+    model_id = "vikhyatk/moondream2"
+    MD_REVISION = "2024-03-13"
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        "vikhyatk/moondream2", revision=MD_REVISION
+    )
+    moondream = AutoModelForCausalLM.from_pretrained(
+        "vikhyatk/moondream2",
+        revision=MD_REVISION,
+        trust_remote_code=True,
+        attn_implementation="flash_attention_2" if DEVICE == "cuda" else None,
+        torch_dtype=DTYPE,
+        device_map={"": DEVICE},
+    )
+    moondream.eval()
+
+    # Calculate tokenizer size
+    tokenizer_files = [
+        "added_tokens.json",
+        "tokenizer_config.json",
+        "tokenizer.json",
+        "vocab.json",
+        "merges.txt",
+    ]
+    tokenizer_size = sum(
+        os.path.getsize(os.path.join(local_model_path, f))
+        for f in tokenizer_files
+        if os.path.exists(os.path.join(local_model_path, f))
+    )
+
+    print(f"Tokenizer Size: {tokenizer_size / (1024 ** 2):.2f} MB")
+
+
+DEVICE = "cuda"
+DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
+IMG_TOKENS = 729
+MAX_NEW_TOKENS = 128
+
+
+def image_to_bytes(image):
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format="PNG")
+    img_byte_arr = img_byte_arr.getvalue()
+    return img_byte_arr
+
+
+def decode_answer(
+    inputs_embeds, tokenizer, moondream, attn_mask=None, result_queue=None, **kwargs
+):
+    generate_config = {
+        "eos_token_id": tokenizer.eos_token_id,
+        "bos_token_id": tokenizer.bos_token_id,
+        "pad_token_id": tokenizer.eos_token_id,
+        "max_new_tokens": MAX_NEW_TOKENS,
+        **kwargs,
+    }
+
+    moondream.text_model.transformer.gradient_checkpointing_disable()
+    output_ids = moondream.text_model.generate(
+        inputs_embeds=inputs_embeds.unsqueeze(0),
+        attention_mask=attn_mask,
+        **generate_config,
+    )
+
+    answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+    cleaned_answer = answer.strip()
+
+    if result_queue:
+        result_queue.put(cleaned_answer)
+    else:
+        return cleaned_answer
+
+
+def get_image_sizes(image_folder):
+
+    widths = []
+    heights = []
+    sizes = []
+
+    for root, _, files in os.walk(image_folder):
+        for file in files:
+            if file.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+                image_path = os.path.join(root, file)
+                try:
+                    with Image.open(image_path) as img:
+                        width, height = img.size
+                        widths.append(width)
+                        heights.append(height)
+                        sizes.append((width, height))
+                except Exception as e:
+                    print(f"Error processing {image_path}: {e}")
+
+    return widths, heights, sizes

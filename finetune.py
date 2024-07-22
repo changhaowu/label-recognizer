@@ -600,5 +600,3 @@ if __name__ == "__main__":
         train()
     elif len(sys.argv) > 1 and sys.argv[1] == "test":
         test()
-    elif len(sys.argv) > 1 and sys.argv[1] == "prune":
-        prune()
