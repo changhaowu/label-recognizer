@@ -2,11 +2,11 @@ import time
 import heapq
 import torch
 import torch.nn as nn
-from .sparsegpt import SparseGPT
-from .layerwrapper import WrappedGPT
-from .data import get_loaders
+from wanda.lib.sparsegpt import SparseGPT
+from wanda.lib.layerwrapper import WrappedGPT
+from wanda.lib.data import get_loaders
 
-from .ablate import AblateGPT
+from wanda.lib.ablate import AblateGPT
 
 
 def find_layers(module, layers=[nn.Linear], name=""):
@@ -40,13 +40,15 @@ def check_sparsity(model):
     layers = model.model.layers
     count = 0
     total_params = 0
-    for i in range(len(layers)):
+    for i, layer in enumerate(layers):
+        # for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
 
         sub_count = 0
         sub_params = 0
-        for name in subset:
+        for name, layer in subset.items():
+            # for name in subset:
             W = subset[name].weight.data
             count += (W == 0).sum().item()
             total_params += W.numel()
@@ -63,16 +65,19 @@ def check_sparsity(model):
 def prepare_calibration_input(model, dataloader, device):
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    layers = model.model.layers
+    # layers = model.model.layers
+    layers = model.transformer.h
 
-    # dev = model.hf_device_map["model.embed_tokens"]
-    if "model.embed_tokens" in model.hf_device_map:
-        device = model.hf_device_map["model.embed_tokens"]
+    # # dev = model.hf_device_map["model.embed_tokens"]
+    # if "model.embed_tokens" in model.hf_device_map:
+    #     # if "transformer.embd.wte" in model.hf_device_map:
+    #     device = model.hf_device_map["model.embed_tokens"]
 
     dtype = next(iter(model.parameters())).dtype
-    inps = torch.zeros(
-        (128, model.seqlen, model.config.hidden_size), dtype=dtype, device=device
-    )
+    inps = torch.zeros((16, 1061, model.config.hidden_size), dtype=dtype, device=device)
+    # inps = torch.zeros(
+    #     (128, model.seqlen, model.config.hidden_size), dtype=dtype, device=device
+    # )
     inps.requires_grad = False
     cache = {"i": 0, "attention_mask": None, "position_ids": None}
 
@@ -89,9 +94,15 @@ def prepare_calibration_input(model, dataloader, device):
             raise ValueError
 
     layers[0] = Catcher(layers[0])
-    for batch in dataloader:
+
+    batch = next(iter(dataloader))[0]
+    for sample in batch:
         try:
-            model(batch[0].to(device))
+            # inputs = batch[0].squeeze(0).to(device)
+            # inputs = sample[0][0, :, :].to(device)
+            inputs = sample.to(device)
+            # here batch[0] actually need the encoded tokens as inputs
+            model(inputs_embeds=inputs)
         except ValueError:
             pass
     layers[0] = layers[0].module
@@ -102,6 +113,22 @@ def prepare_calibration_input(model, dataloader, device):
     model.config.use_cache = use_cache
 
     return inps, outs, attention_mask, position_ids
+
+    # layers[0] = Catcher(layers[0])
+    # for batch in dataloader:
+    #     try:
+    #         # here batch[0] actually need the encoded tokens as inputs
+    #         model(batch[0].to(device))
+    #     except ValueError:
+    #         pass
+    # layers[0] = layers[0].module
+
+    # outs = torch.zeros_like(inps)
+    # attention_mask = cache["attention_mask"]
+    # position_ids = cache["position_ids"]
+    # model.config.use_cache = use_cache
+
+    # return inps, outs, attention_mask, position_ids
 
 
 def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
@@ -120,11 +147,13 @@ def prune_magnitude(
 ):
     layers = model.model.layers
 
-    for i in range(len(layers)):
+    for i, layer in enumerate(layers):
+        # for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
 
-        for name in subset:
+        for name, layer in subset.items():
+            # for name in subset:
             W = subset[name].weight.data
             W_metric = torch.abs(W)
             if prune_n != 0:
@@ -144,6 +173,168 @@ def prune_magnitude(
                 W_mask = W_metric <= thresh
 
             W[W_mask] = 0
+
+
+def prune_wanda(
+    args,
+    model,
+    tokenizer,
+    device=torch.device("cuda:0"),
+    prune_n=0,
+    prune_m=0,
+    dataloader=None,
+):
+    """
+    Prunes the weights of a given model based on certain sparsity criteria.
+
+    Args:
+        args: The command-line arguments passed to the script.
+        model: The model to be pruned.
+        tokenizer: The tokenizer used for tokenizing the input data.
+        device: The device on which the model and data should be loaded (default: "cuda:0").
+        prune_n: The number of weights to prune in each structured sparsity group (default: 0).
+        prune_m: The size of each structured sparsity group (default: 0).
+        dataloader: The data loader for loading the calibration data (default: None).
+
+    Returns:
+        None
+    """
+
+    print("Starting ...")
+    if dataloader is None:
+        print("loading calibdation data")
+        dataloader, _ = get_loaders(
+            "c4",
+            nsamples=args.nsamples,
+            seed=args.seed,
+            seqlen=model.seqlen,
+            tokenizer=tokenizer,
+        )
+    print("dataset loading complete")
+
+    # for prune moondream text_model here
+    model = model.text_model
+
+    use_cache = model.config.use_cache
+    model.config.use_cache = False
+
+    with torch.no_grad():
+        inps, outs, attention_mask, position_ids = prepare_calibration_input(
+            model, dataloader, device
+        )
+
+    # layers = model.model.layers
+    # layers = model.model.layers
+    layers = model.transformer.h
+
+    for i, layer in enumerate(layers):
+        # for i in range(len(layers)):
+        layer = layers[i]
+        subset = find_layers(layer)
+
+        # if (
+        #     f"model.layers.{i}" in model.hf_device_map
+        # ):  ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
+        #     dev = model.hf_device_map[f"model.layers.{i}"]
+        #     inps, outs, attention_mask, position_ids = (
+        #         inps.to(dev),
+        #         outs.to(dev),
+        #         attention_mask.to(dev),
+        #         position_ids.to(dev),
+        #     )
+
+        wrapped_layers = {}
+        # for name in subset:
+        for name, layer in subset.items():
+            wrapped_layers[name] = WrappedGPT(subset[name])
+
+        def add_batch(name):
+            def tmp(_, inp, out):
+                wrapped_layers[name].add_batch(inp[0].data, out.data)
+
+            return tmp
+
+        handles = []
+        for name in wrapped_layers:
+            handles.append(subset[name].register_forward_hook(add_batch(name)))
+        for j in range(args.nsamples):
+            with torch.no_grad():
+                outs[j] = layer(
+                    inps[j].unsqueeze(0),
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                )[0]
+        for h in handles:
+            h.remove()
+
+        for name, layer in subset.items():
+            # for name in subset:
+            print(f"pruning layer {i} name {name}")
+            W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(
+                wrapped_layers[name].scaler_row.reshape((1, -1))
+            )
+
+            W_mask = (
+                torch.zeros_like(W_metric) == 1
+            )  ## initialize a mask to be all False
+            if prune_n != 0:
+                # structured n:m sparsity
+                for ii in range(W_metric.shape[1]):
+                    if ii % prune_m == 0:
+                        tmp = W_metric[:, ii : (ii + prune_m)].float()
+                        W_mask.scatter_(
+                            1,
+                            ii + torch.topk(tmp, prune_n, dim=1, largest=False)[1],
+                            True,
+                        )
+            else:
+                sort_res = torch.sort(W_metric, dim=-1, stable=True)
+
+                if args.use_variant:
+                    # wanda variant
+                    tmp_metric = torch.cumsum(sort_res[0], dim=1)
+                    sum_before = W_metric.sum(dim=1)
+
+                    alpha = 0.4
+                    alpha_hist = [0.0, 0.8]
+                    W_mask, cur_sparsity = return_given_alpha(
+                        alpha, sort_res, W_metric, tmp_metric, sum_before
+                    )
+                    while (torch.abs(cur_sparsity - args.sparsity_ratio) > 0.001) and (
+                        alpha_hist[1] - alpha_hist[0] >= 0.001
+                    ):
+                        if cur_sparsity > args.sparsity_ratio:
+                            alpha_new = (alpha + alpha_hist[0]) / 2.0
+                            alpha_hist[1] = alpha
+                        else:
+                            alpha_new = (alpha + alpha_hist[1]) / 2.0
+                            alpha_hist[0] = alpha
+
+                        alpha = alpha_new
+                        W_mask, cur_sparsity = return_given_alpha(
+                            alpha, sort_res, W_metric, tmp_metric, sum_before
+                        )
+                    print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
+                else:
+                    # unstructured pruning
+                    indices = sort_res[1][
+                        :, : int(W_metric.shape[1] * args.sparsity_ratio)
+                    ]
+                    W_mask.scatter_(1, indices, True)
+
+            subset[name].weight.data[W_mask] = 0  ## set weights to zero
+
+        for j in range(args.nsamples):
+            with torch.no_grad():
+                outs[j] = layer(
+                    inps[j].unsqueeze(0),
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                )[0]
+        inps, outs = outs, inps
+
+    model.config.use_cache = use_cache
+    torch.cuda.empty_cache()
 
 
 # def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
@@ -232,137 +423,6 @@ def prune_magnitude(
 #     torch.cuda.empty_cache()
 
 
-def prune_wanda(
-    args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0
-):
-    use_cache = model.config.use_cache
-    model.config.use_cache = False
-
-    print("loading calibdation data")
-    dataloader, _ = get_loaders(
-        "c4",
-        nsamples=args.nsamples,
-        seed=args.seed,
-        seqlen=model.seqlen,
-        tokenizer=tokenizer,
-    )
-    print("dataset loading complete")
-    with torch.no_grad():
-        inps, outs, attention_mask, position_ids = prepare_calibration_input(
-            model, dataloader, device
-        )
-
-    # for prune moondream text_model here
-    model = model.text_model
-
-    layers = model.model.layers
-    for i in range(len(layers)):
-        layer = layers[i]
-        subset = find_layers(layer)
-
-        if (
-            f"model.layers.{i}" in model.hf_device_map
-        ):  ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
-            dev = model.hf_device_map[f"model.layers.{i}"]
-            inps, outs, attention_mask, position_ids = (
-                inps.to(dev),
-                outs.to(dev),
-                attention_mask.to(dev),
-                position_ids.to(dev),
-            )
-
-        wrapped_layers = {}
-        for name in subset:
-            wrapped_layers[name] = WrappedGPT(subset[name])
-
-        def add_batch(name):
-            def tmp(_, inp, out):
-                wrapped_layers[name].add_batch(inp[0].data, out.data)
-
-            return tmp
-
-        handles = []
-        for name in wrapped_layers:
-            handles.append(subset[name].register_forward_hook(add_batch(name)))
-        for j in range(args.nsamples):
-            with torch.no_grad():
-                outs[j] = layer(
-                    inps[j].unsqueeze(0),
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                )[0]
-        for h in handles:
-            h.remove()
-
-        for name in subset:
-            print(f"pruning layer {i} name {name}")
-            W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(
-                wrapped_layers[name].scaler_row.reshape((1, -1))
-            )
-
-            W_mask = (
-                torch.zeros_like(W_metric) == 1
-            )  ## initialize a mask to be all False
-            if prune_n != 0:
-                # structured n:m sparsity
-                for ii in range(W_metric.shape[1]):
-                    if ii % prune_m == 0:
-                        tmp = W_metric[:, ii : (ii + prune_m)].float()
-                        W_mask.scatter_(
-                            1,
-                            ii + torch.topk(tmp, prune_n, dim=1, largest=False)[1],
-                            True,
-                        )
-            else:
-                sort_res = torch.sort(W_metric, dim=-1, stable=True)
-
-                if args.use_variant:
-                    # wanda variant
-                    tmp_metric = torch.cumsum(sort_res[0], dim=1)
-                    sum_before = W_metric.sum(dim=1)
-
-                    alpha = 0.4
-                    alpha_hist = [0.0, 0.8]
-                    W_mask, cur_sparsity = return_given_alpha(
-                        alpha, sort_res, W_metric, tmp_metric, sum_before
-                    )
-                    while (torch.abs(cur_sparsity - args.sparsity_ratio) > 0.001) and (
-                        alpha_hist[1] - alpha_hist[0] >= 0.001
-                    ):
-                        if cur_sparsity > args.sparsity_ratio:
-                            alpha_new = (alpha + alpha_hist[0]) / 2.0
-                            alpha_hist[1] = alpha
-                        else:
-                            alpha_new = (alpha + alpha_hist[1]) / 2.0
-                            alpha_hist[0] = alpha
-
-                        alpha = alpha_new
-                        W_mask, cur_sparsity = return_given_alpha(
-                            alpha, sort_res, W_metric, tmp_metric, sum_before
-                        )
-                    print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
-                else:
-                    # unstructured pruning
-                    indices = sort_res[1][
-                        :, : int(W_metric.shape[1] * args.sparsity_ratio)
-                    ]
-                    W_mask.scatter_(1, indices, True)
-
-            subset[name].weight.data[W_mask] = 0  ## set weights to zero
-
-        for j in range(args.nsamples):
-            with torch.no_grad():
-                outs[j] = layer(
-                    inps[j].unsqueeze(0),
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                )[0]
-        inps, outs = outs, inps
-
-    model.config.use_cache = use_cache
-    torch.cuda.empty_cache()
-
-
 @torch.no_grad()
 def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
     ## SparseGPT code available at: https://github.com/IST-DASLab/sparsegpt/tree/f5c25005a61f96a0933ca2f95705a963585aafaa
@@ -415,7 +475,8 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
 
     print("Ready.")
 
-    for i in range(len(layers)):
+    for i, layer in enumerate(layers):
+        # for i in range(len(layers)):
         layer = layers[i]
         if f"model.layers.{i}" in model.hf_device_map:
             dev = model.hf_device_map[f"model.layers.{i}"]
@@ -482,16 +543,18 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
 
 
 @torch.no_grad()
-def prune_ablate(args, model, tokenizer, dev, prune_n=0, prune_m=0):
+def prune_ablate(args, model, tokenizer, dev, prune_n=0, prune_m=0, dataloader=None):
     ## SparseGPT code available at: https://github.com/IST-DASLab/sparsegpt/tree/f5c25005a61f96a0933ca2f95705a963585aafaa
     print("Starting ...")
-    dataloader, _ = get_loaders(
-        "c4",
-        nsamples=args.nsamples,
-        seed=args.seed,
-        seqlen=model.seqlen,
-        tokenizer=tokenizer,
-    )
+    if dataloader == None:
+        print("Loading data ...")
+        dataloader, _ = get_loaders(
+            "c4",
+            nsamples=args.nsamples,
+            seed=args.seed,
+            seqlen=model.seqlen,
+            tokenizer=tokenizer,
+        )
 
     use_cache = model.config.use_cache
     model.config.use_cache = False

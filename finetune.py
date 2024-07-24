@@ -20,11 +20,12 @@ DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
 # DTYPE = torch.float32
 # MD_REVISION = "2024-04-02"
 MD_REVISION = "2024-05-20"
-EPOCHS = 10
+EPOCHS = 1
 # Number of samples to process in each batch. Set this to the highest value that doesn't cause an
 # out-of-memory error. Decrease it if you're running out of memory. Batch size 8 currently uses around
 # 15 GB of GPU memory during fine-tuning.
-BATCH_SIZE = 1
+# BATCH_SIZE = 1
+BATCH_SIZE = 16
 # Number of batches to process before updating the model. You can use this to simulate a higher batch
 # size than your GPU can handle. Set this to 1 to disable gradient accumulation.
 GRAD_ACCUM_STEPS = 1
@@ -154,7 +155,7 @@ for param in moondream.parameters():
         print(f"Parameter {param} does not require grad")
 
 # Load grammar
-with open("grammars/label.ebnf", "r") as file:
+with open("utils/grammars/label.ebnf", "r") as file:
     grammar_str = file.read()
 grammar = IncrementalGrammarConstraint(grammar_str, "root", tokenizer)
 grammar_processor = GrammarConstrainedLogitsProcessor(grammar)
@@ -397,9 +398,6 @@ def compute_loss(batch):
     inputs_embeds = torch.cat(
         (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
     )
-
-    # print("inputs_embeds shape", inputs_embeds.shape)
-    # print("attn_mask shape", attn_mask.shape)
 
     outputs = moondream.text_model(
         inputs_embeds=inputs_embeds,

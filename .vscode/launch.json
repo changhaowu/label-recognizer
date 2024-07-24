@@ -18,6 +18,15 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": ["test"]  // 传递 "test" 参数
+        },
+        {
+            "name": "Python: Current File (Prune)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/prune.py",  // 使用相对路径
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--prune_method", "wanda", "--sparsity_type", "2:4"]
         }
     ]
 }
