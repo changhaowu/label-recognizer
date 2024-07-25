@@ -30,3 +30,9 @@ data_validation/
 ./data_test/
 ./data_train/
 ./data_validation/
+
+# 忽略所有 .pyc 文件
+*.pyc
+
+# 忽略 __pycache__ 目录
+__pycache__/
