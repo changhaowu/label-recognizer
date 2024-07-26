@@ -224,8 +224,8 @@ def prune_wanda(
         )
 
     # layers = model.model.layers
-    # layers = model.model.layers
     layers = model.transformer.h
+    # layers = model.transformer
 
     for i, layer in enumerate(layers):
         # for i in range(len(layers)):
@@ -245,7 +245,7 @@ def prune_wanda(
 
         wrapped_layers = {}
         # for name in subset:
-        for name, layer in subset.items():
+        for name, _ in subset.items():
             wrapped_layers[name] = WrappedGPT(subset[name])
 
         def add_batch(name):

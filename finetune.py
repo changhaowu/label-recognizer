@@ -197,8 +197,6 @@ def collate_fn(batch):
     for labels in labels_acc:
         max_len = max(max_len, len(labels))
 
-    attn_mask_acc = []
-
     for i in range(len(batch)):
         len_i = len(labels_acc[i])
         pad_i = max_len - len_i

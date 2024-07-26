@@ -270,10 +270,11 @@ def print_layer_output(module, input, output):
 
         # 清理缓存
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()
 
 
 # 为模型的每一层注册钩子
-for name, module in moondream.named_modules():
+for name, module in moondream.text_model.named_modules():
     module.register_forward_hook(print_layer_output)
 
 parser = argparse.ArgumentParser()
@@ -302,7 +303,6 @@ with torch.no_grad():
     outputs = moondream.text_model(
         inputs_embeds=token,
         labels=label,
-        # attention_mask=attn_mask,
     )
 
 

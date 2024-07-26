@@ -748,13 +748,20 @@ class PhiDecoderLayer(nn.Module):
 
         # print("position_ids shape after adjustment:", position_ids.shape)
 
-        # if past_key_value is not None:
-        #     print("past_key_value shape:", past_key_value.shape)
-        # else:
-        #     print("past_key_value is None")
-
         # print("output_attentions:", output_attentions)
         # print("use_cache:", use_cache)
+
+        # Ensure attention_mask matches the inputs_embeds size
+        if hidden_states is not None:
+            # print("activated!")
+            batch_size, seq_length = hidden_states.size(0), hidden_states.size(1)
+            if attention_mask is not None:
+                if attention_mask.size(1) != seq_length:
+                    attention_mask = attention_mask[:, :seq_length]
+
+                if position_ids is not None:
+                    if position_ids.size(1) != seq_length:
+                        position_ids = position_ids[:, :seq_length]
 
         # Self Attention
         attn_outputs, self_attn_weights, present_key_value = self.mixer(
@@ -864,25 +871,17 @@ class PhiModel(PhiPreTrainedModel):
         # self.forward_call_count += 1
         # print(f"Forward call count: {self.forward_call_count}")
 
-        # print("use_cache:", use_cache)
+        # # Ensure attention_mask matches the inputs_embeds size
+        # if inputs_embeds is not None:
+        #     # print("activated!")
+        #     batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
+        #     if attention_mask is not None:
+        #         if attention_mask.size(1) != seq_length:
+        #             attention_mask = attention_mask[:, :seq_length]
 
-        # # # Print the stack trace
-        # print("Stack trace for the call:")
-        # traceback.print_stack()
-
-        # print("activated?")
-
-        # Ensure attention_mask matches the inputs_embeds size
-        if inputs_embeds is not None:
-            # print("activated!")
-            batch_size, seq_length = inputs_embeds.size(0), inputs_embeds.size(1)
-            if attention_mask is not None:
-                if attention_mask.size(1) != seq_length:
-                    attention_mask = attention_mask[:, :seq_length]
-
-                if position_ids is not None:
-                    if position_ids.size(1) != seq_length:
-                        position_ids = position_ids[:, :seq_length]
+        #         if position_ids is not None:
+        #             if position_ids.size(1) != seq_length:
+        #                 position_ids = position_ids[:, :seq_length]
 
         output_attentions = (
             output_attentions

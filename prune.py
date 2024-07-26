@@ -15,7 +15,8 @@ from wanda.lib.prune import (
 )
 from wanda.lib.eval import eval_ppl, eval_zero_shot
 from torch.utils.data import DataLoader, Dataset
-from moondream.moondream import Moondream, detect_device, LATEST_REVISION
+from moondream.moondream import Moondream
+from moondream.moondream.util import detect_device, LATEST_REVISION
 
 
 print("torch", version("torch"))
