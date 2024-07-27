@@ -30,3 +30,5 @@
         }
     ]
 }
+
+// /home/karl/.local/share/virtualenvs/label-recognizer--cB-KeqD/bin/python /home/karl/Documents/Github/label-recognizer/prune.py --prune_method wanda --sparsity_type 2:4

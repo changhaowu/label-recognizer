@@ -7,6 +7,7 @@ from wanda.lib.layerwrapper import WrappedGPT
 from wanda.lib.data import get_loaders
 
 from wanda.lib.ablate import AblateGPT
+from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
 
 
 def find_layers(module, layers=[nn.Linear], name=""):
@@ -65,60 +66,57 @@ def check_sparsity(model):
 def prepare_calibration_input(model, dataloader, device):
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    # layers = model.model.layers
     layers = model.transformer.h
+    dtype = next(iter(model.parameters())).dtype
 
     # # dev = model.hf_device_map["model.embed_tokens"]
     # if "model.embed_tokens" in model.hf_device_map:
     #     # if "transformer.embd.wte" in model.hf_device_map:
     #     device = model.hf_device_map["model.embed_tokens"]
 
-    dtype = next(iter(model.parameters())).dtype
-    inps = torch.zeros((16, 1061, model.config.hidden_size), dtype=dtype, device=device)
-    # inps = torch.zeros(
-    #     (128, model.seqlen, model.config.hidden_size), dtype=dtype, device=device
-    # )
-    inps.requires_grad = False
-    cache = {"i": 0, "attention_mask": None, "position_ids": None}
+    batch = next(iter(dataloader))
+    inputs_embed = batch[0].to(device)
+    # Ensure the type of inputs_embed is aligned to model parameter
+    if inputs_embed.dtype != dtype:
+        inputs_embed = inputs_embed.to(dtype)
 
-    class Catcher(nn.Module):
-        def __init__(self, module):
-            super().__init__()
-            self.module = module
+    outs = torch.zeros_like(inputs_embed).to(device)
+    attention_mask = batch[2]
+    position_ids = torch.arange(inputs_embed[0].shape[0], device=device).unsqueeze(0)
 
-        def forward(self, inp, **kwargs):
-            inps[cache["i"]] = inp
-            cache["i"] += 1
-            cache["attention_mask"] = kwargs["attention_mask"]
-            cache["position_ids"] = kwargs["position_ids"]
-            raise ValueError
-
-    layers[0] = Catcher(layers[0])
-
-    batch = next(iter(dataloader))[0]
-    for sample in batch:
-        try:
-            # inputs = batch[0].squeeze(0).to(device)
-            # inputs = sample[0][0, :, :].to(device)
-            inputs = sample.to(device)
-            # here batch[0] actually need the encoded tokens as inputs
-            model(inputs_embeds=inputs)
-        except ValueError:
-            pass
-    layers[0] = layers[0].module
-
-    outs = torch.zeros_like(inps)
-    attention_mask = cache["attention_mask"]
-    position_ids = cache["position_ids"]
     model.config.use_cache = use_cache
+    return inputs_embed, outs, attention_mask, position_ids
 
-    return inps, outs, attention_mask, position_ids
+    # n_smaples, seq_length, embedding_shape
+    # inps = torch.zeros(
+    #     (16, inputs_embed[0].shape[0], model.config.hidden_size),
+    #     dtype=dtype,
+    #     device=device,
+    # )
+
+    # inps.requires_grad = False
+    # cache = {"i": 0, "attention_mask": None, "position_ids": None}
+
+    # class Catcher(nn.Module):
+    #     def __init__(self, module):
+    #         super().__init__()
+    #         self.module = module
+
+    #     def forward(self, inp, **kwargs):
+    #         inps[cache["i"]] = inp
+    #         cache["i"] += 1
+    #         cache["attention_mask"] = kwargs["attention_mask"]
+    #         cache["position_ids"] = kwargs["position_ids"]
+    #         raise ValueError
+
+    # original code embeds inputs_ids here, moondream does not need this
 
     # layers[0] = Catcher(layers[0])
-    # for batch in dataloader:
+    # for sample in batch:
     #     try:
+    #         inputs = sample.to(device)
     #         # here batch[0] actually need the encoded tokens as inputs
-    #         model(batch[0].to(device))
+    #         model(inputs_embeds=inputs)
     #     except ValueError:
     #         pass
     # layers[0] = layers[0].module
@@ -223,6 +221,14 @@ def prune_wanda(
             model, dataloader, device
         )
 
+    # print("flash_attention?", model.transformer._use_flash_attention_2)
+    attention_mask = _prepare_4d_causal_attention_mask(
+        attention_mask,
+        (args.nsamples, inps[0].shape[0]),
+        inps,
+        0,
+    ).to(device)
+
     # layers = model.model.layers
     layers = model.transformer.h
     # layers = model.transformer
@@ -261,13 +267,13 @@ def prune_wanda(
             with torch.no_grad():
                 outs[j] = layer(
                     inps[j].unsqueeze(0),
-                    attention_mask=attention_mask,
+                    attention_mask=attention_mask[j].unsqueeze(0),
                     position_ids=position_ids,
                 )[0]
         for h in handles:
             h.remove()
 
-        for name, layer in subset.items():
+        for name, _ in subset.items():
             # for name in subset:
             print(f"pruning layer {i} name {name}")
             W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(
@@ -328,12 +334,12 @@ def prune_wanda(
             with torch.no_grad():
                 outs[j] = layer(
                     inps[j].unsqueeze(0),
-                    attention_mask=attention_mask,
+                    attention_mask=attention_mask[j].unsqueeze(0),
                     position_ids=position_ids,
                 )[0]
         inps, outs = outs, inps
 
-    model.config.use_cache = use_cache
+    model.text_model.config.use_cache = use_cache
     torch.cuda.empty_cache()
 
 

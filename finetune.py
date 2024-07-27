@@ -167,6 +167,7 @@ def collate_fn(batch):
 
     labels_acc = []
     tokens_acc = []
+    attn_mask_acc = []
     ground_truth_answers = []
 
     for sample in batch:

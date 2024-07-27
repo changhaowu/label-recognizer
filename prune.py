@@ -44,6 +44,8 @@ def get_llm(model_name, cache_dir="llm_weights"):
     DEVICE = "cuda"
     DTYPE = torch.float32 if DEVICE == "cpu" else torch.float16
 
+    print("DTYPE: ", DTYPE)
+
     model = Moondream.from_pretrained(
         pretrained_model_name_or_path=cache_dir,
         # revision=MD_REVISION,
@@ -171,11 +173,8 @@ def stock_label_loader(
                     torch.tensor([tokenizer.bos_token_id], device=DEVICE)
                 )
             ]
-            # labs = [-100] * (IMG_TOKENS + 1)
             toks.append(img_embs)
-            labs = [-100] * (
-                img_embs.size(0) + 1
-            )  # Adjusted to match image embedding size
+            labs = [-100] * (IMG_TOKENS + 1)  # Adjusted to match image embedding size
 
             for qa in sample["qa"]:
                 q_t = tokenizer(
@@ -194,7 +193,7 @@ def stock_label_loader(
                 a_t = torch.tensor(a_t).to(DEVICE)
                 a_t_embeds = model.text_model.get_input_embeddings()(a_t)
                 toks.append(a_t_embeds)
-                labs.extend(a_t.tolist())
+                labs.extend(a_t)
 
             # # Debug: Print the dimensions of each tensor in toks
             # for idx, t in enumerate(toks):
@@ -228,6 +227,7 @@ def stock_label_loader(
             torch.stack(tokens_acc),
             # torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
             torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
+            torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
         )
 
     dataloaders = {

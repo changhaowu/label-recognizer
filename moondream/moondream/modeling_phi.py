@@ -212,16 +212,18 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-    # # Print tensor shapes for debugging
-    # print(f"q shape: {q.shape}")
-    # print(f"k shape: {k.shape}")
-    # print(f"cos shape: {cos.shape}")
-    # print(f"sin shape: {sin.shape}")
-    # print(f"position_ids shape: {position_ids.shape} \n")
-    # print(f"position_ids: {position_ids} \n")
 
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
+
+    # Print tensor shapes for debugging
+    print(f"q shape: {q.shape}")
+    print(f"k shape: {k.shape}")
+    print(f"cos shape: {cos.shape}")
+    print(f"sin shape: {sin.shape}")
+    print(f"position_ids shape: {position_ids.shape} \n")
+    print(f"position_ids: {position_ids} \n")
+
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
@@ -752,16 +754,18 @@ class PhiDecoderLayer(nn.Module):
         # print("use_cache:", use_cache)
 
         # Ensure attention_mask matches the inputs_embeds size
-        if hidden_states is not None:
-            # print("activated!")
-            batch_size, seq_length = hidden_states.size(0), hidden_states.size(1)
-            if attention_mask is not None:
-                if attention_mask.size(1) != seq_length:
-                    attention_mask = attention_mask[:, :seq_length]
+        # if hidden_states is not None:
+        #     batch_size, seq_length = hidden_states.size(0), hidden_states.size(1)
+        #     if attention_mask is not None:
 
-                if position_ids is not None:
-                    if position_ids.size(1) != seq_length:
-                        position_ids = position_ids[:, :seq_length]
+        #         attention_mask = attention_mask.to(dtype=hidden_states.dtype)
+
+        #         if attention_mask.size(1) != seq_length:
+        #             attention_mask = attention_mask[:, :seq_length]
+
+        #         if position_ids is not None:
+        #             if position_ids.size(1) != seq_length:
+        #                 position_ids = position_ids[:, :seq_length]
 
         # Self Attention
         attn_outputs, self_attn_weights, present_key_value = self.mixer(
@@ -950,17 +954,6 @@ class PhiModel(PhiPreTrainedModel):
                 else None
             )
         else:
-            # # 调试信息
-            # print(f"batch_size: {inputs_embeds.size(0)}")
-            # print(f"seq_length: {inputs_embeds.size(1)}")
-            # print(f"inputs_embeds shape: {inputs_embeds.shape}")
-            # print(f"past_key_values_length: {past_key_values_length}")
-
-            # print(
-            #     "attention_mask shape before preparing 4d mask:", attention_mask.shape
-            # )
-            # print("attention_mask values before preparing 4d mask:", attention_mask)
-
             # 4d mask is passed through the layers
             attention_mask = _prepare_4d_causal_attention_mask(
                 attention_mask,
