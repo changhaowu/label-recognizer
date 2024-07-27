@@ -35,20 +35,23 @@ def find_layers(module, layers=[nn.Linear], name=""):
 
 
 def check_sparsity(model):
+    model = model.text_model
+
     use_cache = model.config.use_cache
     model.config.use_cache = False
 
-    layers = model.model.layers
+    layers = model.transformer.h
+    # layers = model.model.layers
     count = 0
     total_params = 0
-    for i, layer in enumerate(layers):
+    for i, _ in enumerate(layers):
         # for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
 
         sub_count = 0
         sub_params = 0
-        for name, layer in subset.items():
+        for name, _ in subset.items():
             # for name in subset:
             W = subset[name].weight.data
             count += (W == 0).sum().item()
@@ -339,7 +342,7 @@ def prune_wanda(
                 )[0]
         inps, outs = outs, inps
 
-    model.text_model.config.use_cache = use_cache
+    model.config.use_cache = use_cache
     torch.cuda.empty_cache()
 
 

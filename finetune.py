@@ -123,16 +123,16 @@ datasets = {
 }
 
 # weights_path = "./checkpoints/pretrained_weights_05_20"
-# tokenizer_path = "./checkpoints/pretrained_weights_05_20"
+# tokenizer_path = weights_path
 
-# weights_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
-# tokenizer_path = "checkpoints/moondream-ft_lr_5e-06_epoch_50"
+# weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+# tokenizer_path = weights_path
 
-weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
-tokenizer_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10"
+weights_path = "checkpoints/moondream-ft_lr_3e-06_epoch_10_pruned"
+tokenizer_path = weights_path
 
 # weights_path = "checkpoints/lfs_raw"
-# tokenizer_path = "checkpoints/lfs_raw"
+# tokenizer_path = weights_path
 
 tokenizer = AutoTokenizer.from_pretrained(
     # "vikhyatk/moondream2", revision=MD_REVISION, trust_remote_code=True
